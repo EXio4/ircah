@@ -40,19 +40,19 @@ message
     <*> params) <* crlf
     
 tags :: Parser Tags
-tags = Tags <$> many1 tag
+tags = Tags <$> many1 tag <?> "tags"
 
 tag :: Parser Tag
-tag = Tag <$> key <*> optional (char '=' *> escapedValue)
+tag = Tag <$> key <*> optional (char '=' *> escapedValue) <?> "tag"
 
 key :: Parser Key
-key = Key <$> optional (vendor <* char '/') <*> takeWhile (\x -> isAlpha_ascii x || isDigit x || x == '-')  
+key = Key <$> optional (vendor <* char '/') <*> takeWhile (\x -> isAlpha_ascii x || isDigit x || x == '-') <?> "key"
 
 escapedValue :: Parser ByteString
-escapedValue = takeTill (\x -> x `elem` "; \0\r\n")
+escapedValue = takeTill (\x -> x `elem` "; \0\r\n") <?> "escaped value"
 
 vendor :: Parser Vendor
-vendor = Vendor <$> host
+vendor = Vendor <$> host <?> "vendor"
 
 prefix :: Parser Prefix
 prefix
@@ -62,33 +62,37 @@ prefix
         <*> optional (char '@' *> host))
         <* lookH ' ')
     <|> (ServerName <$> host)
+    <?> "prefix"
 nick :: Parser Nick
-nick = Nick <$> nick'
+nick = Nick <$> nick' <?> "nick"
     where nick' =
             BS.cons
                 <$> letter_ascii
                 <*> takeWhile (\x -> isAlpha_ascii x || isDigit x || special x)
-          special x = x `elem` "-[]\\`^{}" 
+          special x = x `elem` "-_[]\\`^{}" 
           
 
 command :: Parser Command
 command
     =   Command <$> takeWhile1 isAlpha_ascii
     <|> (\x y z -> CmdNumber (read [x,y,z])) <$> digit <*> digit <*> digit
+    <?> "command"
     
 params :: Parser Params
 params = space *> (
         (\x -> Params [Param x]) <$> (char ':' *> trailing)
     <|> ((\x (Params y) -> Params (x:y)) <$> middle <*> params))
+    <|> (Params [] <$ lookH '\r')
+    <?> "params"
 
 middle :: Parser Param
-middle = Param <$> takeTill1 (\x -> x `elem` " \0\r\n")
+middle = Param <$> takeTill1 (\x -> x `elem` " \0\r\n") <?> "middle"
 
 trailing :: Parser ByteString
-trailing = takeTill (\x -> x `elem` "\0\r\n")
+trailing = takeTill (\x -> x `elem` "\0\r\n") <?> "trailing" 
         
 user :: Parser User
-user = User <$> takeTill (\x -> x `elem` " \0\r\n")
+user = User <$> takeTill (\x -> x `elem` " \0\r\n") <?> "user"
 
 
 parseIRC :: ByteString -> (ByteString, Either ([String], String) Message)

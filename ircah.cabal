@@ -56,6 +56,8 @@ executable cah
                       ,IRC.Raw.Types
                       ,IRC.Raw.Parser
                       ,IRC.Raw.Parser.Host
+                      ,IRC.Raw.Serialize
+                      ,IRC.Raw.Network
   
   -- LANGUAGE extensions used by modules in this package.
   -- other-extensions:    
@@ -64,6 +66,8 @@ executable cah
   build-depends:       base >=4.7 && <4.8
                       ,attoparsec == 0.13.*
                       ,bytestring == 0.10.*
+                      ,network-simple == 0.4.*
+                      ,network        == 2.6.*
   
   -- Directories containing source files.
   hs-source-dirs:      src

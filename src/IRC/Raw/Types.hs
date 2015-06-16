@@ -1,6 +1,9 @@
 module IRC.Raw.Types where
 
 import Data.ByteString (ByteString) 
+import Control.Concurrent.Chan (Chan)
+
+{- naive representation of the IRC BNF -}
 
 data Message = Message (Maybe Tags) (Maybe Prefix) Command Params
     deriving (Show,Eq)
@@ -39,3 +42,9 @@ data Key     = Key (Maybe Vendor) ByteString
     
 data Vendor  = Vendor Host
     deriving (Show,Eq)
+
+    
+data IRC
+    = IRC
+        (Chan Message) -- ^ input  stream (IRC -> HS)
+        (Chan Message) -- ^ output stream (HS -> IRC)
