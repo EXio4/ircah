@@ -1,5 +1,22 @@
-module IRC.Types where
-
+module IRC.Types (
+     Command(..)
+    ,Fallback(..)
+    ,Handler(..)
+    ,User(..)
+    ,Channel
+    ,Nick
+    ,Message
+    ,Ident
+    ,Host
+    ,Account
+    ,Target
+    ,Mode(..)
+    ,CMode(..)
+    ,SASLCfg(..)
+    ,ChannelCfg(..)
+    ,IRCConfig(..)
+    ,Raw.IRC(..)
+) where
 import Data.Text (Text)
 import qualified IRC.Raw.Types as Raw
 
@@ -11,9 +28,14 @@ data Handler m a
         [Command  m a] 
         (Fallback m a)
 
+data User = User Nick Ident Host 
+    deriving (Show,Eq)
+        
 type Channel = Text
 type Nick    = Text
 type Message = Text
+type Ident   = Text
+type Host    = Text
 type Account = Text
 type Target  = Text
 
@@ -21,8 +43,6 @@ data Mode = Plus  Char
           | Minus Char
     deriving (Show,Eq)
 data CMode = CMode Nick Mode
-    deriving (Show,Eq)
-data User = User Nick
     deriving (Show,Eq)
     
 data SASLCfg = SASLCfg {

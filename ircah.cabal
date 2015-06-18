@@ -60,6 +60,7 @@ executable cah
                       ,IRC.Raw.Network
                       ,IRC.Types
                       ,IRC.Commands
+                      ,IRC.Client
                       ,CAH.Cards.Types
                       ,CAH.Cards.Import
                       ,CAH.Cards.Serialize

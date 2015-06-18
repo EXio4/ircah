@@ -6,7 +6,9 @@ import           CAH.Cards.Types
 import           CAH.Cards.Import
 import           CAH.Cards.Serialize
 import           Data.Set (Set)
-import qualified IRC
+import qualified IRC.Client as IRC
+import           IRC.Types
+import qualified IRC.Commands as IRC
 import           IRC.Raw
 import           Control.Monad
 import           Control.Concurrent
@@ -30,25 +32,23 @@ convertFN typ json out
                     Just v  -> withFile out WriteMode (`exportWhiteCards` v)
            _ -> putStrLn "wat"
 
+cfg net p nick ch = IRCConfig net p nick Nothing [ChannelCfg ch Nothing]
+           
 main :: IO ()
 main = do
-    [network, port, nick, channel] <- getArgs
-    if network == "convert"
-    then convertFN port nick channel
-    else connectToIRC_raw network (read port) (irc (BS.pack nick) (BS.pack channel))
-    where irc nick channel i = do
-            irc_send i (Message Nothing Nothing (Command "USER") (Params [Param "x", Param "x", Param "x", Param "x"]))
-            irc_send i (Message Nothing Nothing (Command "NICK") (Params [Param nick]))
-            reader i channel
-            
-reader :: IRC -> ByteString -> IO ()
-reader irc channel = forever $ do
-    x <- irc_read irc
-    case x of 
-         (Message _ _ (Command "PING") params) ->
-            irc_send irc (Message Nothing Nothing (Command "PONG") params)
-         (Message _ _ (CmdNumber 376)  _) ->
-            irc_send irc (Message Nothing Nothing (Command "JOIN") (Params [Param channel]))
-         _ -> return ()
+    x <- getArgs
+    [cmd, port, nick, channel] <- getArgs
+    case x of
+         ["convert", format, json, target] -> convertFN format json target
+         [network  , port  , nick, ch]     -> IRC.connectToIRC (cfg network (read port) nick ch) (forever client)
          
          
+client :: IRC -> IO ()
+client irc = do
+    IRC.onIRC irc 
+        (\x -> print x)
+        [IRC.onChannelMsg $ \user channel msg -> do
+            case msg of
+                 "!ping" -> IRC.msg irc channel "pong"
+                 _       -> return ()
+        ]
