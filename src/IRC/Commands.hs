@@ -48,11 +48,8 @@ genCommand condition fn
                  Nothing -> Nothing
                  Just v  -> Just (uncurryN fn v)
 
- --   = Command $ \msg ->
- --        fmap (\x -> fn (uncurryFN x)) (condition msg)
-
-onJoin :: (Nick -> Channel -> Message -> IO a) -> Command a
-onJoin fn = genCommand cnd fn
+onPRIVMSG :: (Nick -> Channel -> Message -> IO a) -> Command a
+onPRIVMSG fn = genCommand cnd fn
     where cnd (Raw.Message
                     _
                     (Just (Raw.Prefix (Raw.Nick nick) _ _))
