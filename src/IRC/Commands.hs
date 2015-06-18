@@ -39,16 +39,16 @@ instance UncurryFN y r => UncurryFN (x,y) r where
             f' = fn x
           in uncurryN f' y
                          
-                         
+            
 
-genCommand :: (UncurryFN a (IO b)) => (Raw.Message -> Maybe a) -> Curry a (IO b) -> Command b
+genCommand :: (UncurryFN a (m b)) => (Raw.Message -> Maybe a) -> Curry a (m b) -> Command m b
 genCommand condition fn
     = Command $ \msg -> 
             case condition msg of
                  Nothing -> Nothing
                  Just v  -> Just (uncurryN fn v)
 
-onPRIVMSG :: (Nick -> Channel -> Message -> IO a) -> Command a
+onPRIVMSG :: (Nick -> Channel -> Message -> m a) -> Command m a
 onPRIVMSG fn = genCommand cnd fn
     where cnd (Raw.Message
                     _
@@ -58,3 +58,9 @@ onPRIVMSG fn = genCommand cnd fn
                 = Just (T.decodeUtf8 nick , (T.decodeUtf8 channel , (T.decodeUtf8 msg , ())))
           cnd _ = Nothing
           
+          
+run :: Handler m a -> Raw.Message -> m a
+run (Handler cmds (Fallback fallback)) msg = go cmds 
+    where go []     = fallback msg
+          go ((Command f):fs) | Just x' <- f msg = x'
+          go (_:fs) = go fs

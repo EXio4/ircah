@@ -3,7 +3,13 @@ module IRC.Types where
 import Data.Text (Text)
 import qualified IRC.Raw.Types as Raw
 
-data Command a = Command (Raw.Message -> Maybe (IO a))
+data Command  m a = Command (Raw.Message -> Maybe (m a))
+data Fallback m a = Fallback (Raw.Message -> m a)
+
+data Handler m a
+    = Handler 
+        [Command  m a] 
+        (Fallback m a)
 
 type Channel = Text
 type Nick    = Text
@@ -29,7 +35,7 @@ data ChannelCfg = ChannelCfg {
     ,channel_password :: Maybe String
 } deriving (Show,Eq)
     
-data Config = Config {
+data IRCConfig = IRCConfig {
      config_network  :: String
     ,config_port     :: Int
     ,config_nick     :: String
