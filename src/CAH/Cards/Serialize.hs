@@ -20,12 +20,22 @@ import           Parser.Utils
 
 -- this should return IO (Either String Pack)
 
+metadataFile,whiteFiles,blackFiles :: FilePath -> FilePath
+[metadataFile,whiteFiles,blackFiles] = map (flip (<>)) ["/metadata", "/pack/white.txt", "/pack/black.txt"]
+
 load :: FilePath -> IO Pack
 load directory 
     =   Pack
-    <$> loadMetadata (directory <> "/metadata")
-    <*> loadWhite    (directory <> "/pack/white.txt")
-    <*> loadBlack    (directory <> "/pack/black.txt")
+    <$> loadMetadata (metadataFile directory)
+    <*> loadWhite    (whiteFiles   directory)
+    <*> loadBlack    (blackFiles   directory)
+    
+save :: FilePath -> Pack -> IO ()
+save directory (Pack metadata white black) = do
+    saveMetadata metadata (metadataFile directory)
+    saveWhite    white    (whiteFiles   directory)
+    saveBlack    black    (blackFiles   directory)    
+    
     
 loadMetadata :: FilePath -> IO Metadata
 loadMetadata ps = do
@@ -37,15 +47,16 @@ loadMetadata ps = do
 loadWhite :: FilePath -> IO (Set WhiteCard)
 loadWhite = parseOver parseWhiteCard
 
+loadBlack :: FilePath -> IO (Set BlackCard)
 loadBlack = parseOver parseBlackCard
 
 parseOver :: Ord a => Parser a -> FilePath -> IO (Set a)
 parseOver parser path = do
     file <- BS.readFile path
-    let x = parseOnly (fmap S.fromList (many parser)) file
+    let x = parseOnly (many parser) file
     case x of
          Left err -> S.empty <$ putStrLn ("error loading card file ~ " <> path)
-         Right x  -> return x 
+         Right x'  -> return (S.fromList x') 
 
 parseWhiteCard :: Parser WhiteCard
 parseWhiteCard = (WhiteCard . T.decodeUtf8 <$> takeWhile1 (/= '\n')) <* char '\n'
@@ -65,13 +76,6 @@ parseBlackCard = BlackCard <$> go
                     <|> (VisibleHole   <$ string "_"))
                 <*> go 
             
-        
-save :: FilePath -> Pack -> IO ()
-save directory (Pack metadata white black) = do
-    saveMetadata metadata (directory <> "/metadata")
-    saveWhite    white    (directory <> "/pack/white.txt")
-    saveBlack    black    (directory <> "/pack/black.txt")    
-    
 saveMetadata :: Metadata -> FilePath -> IO ()
 saveMetadata md fp = withFile fp WriteMode $ \h -> BS.hPutStr h (YAML.encode md)
 saveWhite :: Set WhiteCard -> FilePath -> IO ()

@@ -4,7 +4,7 @@ module Main (main,client) where
 
 import           CAH.Cards.Types
 import           CAH.Cards.Import
-import           CAH.Cards.Serialize
+import qualified CAH.Cards.Serialize as Cards
 import           Data.Set (Set)
 import qualified IRC.Client as IRC
 import           IRC.Types
@@ -35,22 +35,24 @@ convertFN typ json out
            _ -> putStrLn "wat"
 
 cfg net p nick ch = IRCConfig net p nick Nothing [ChannelCfg ch Nothing]
-           
+                      
 main :: IO ()
 main = do
     x <- getArgs
-    [cmd, port, nick, channel] <- getArgs
     case x of
          ["convert", format, json, target] -> convertFN format json target
+         ["load_cards", cardPack] -> 
+                print =<< Cards.load cardPack
          [network  , port  , nick, ch]     ->
             IRC.connectToIRC (cfg network (read port) nick ch) (forever . client)
+         xs -> putStrLn "invalid params"
          
          
 client :: IRC -> IO ()
 client irc = do
     IRC.onIRC irc 
         (\x -> return ())
-        [IRC.onPRIVMSG $ \user channel msg -> do
+        [IRC.onChannelMsg $ \user channel msg -> do
             case msg of
                  "!ping" ->
                      Just () <$ IRC.msg irc channel "pong"
