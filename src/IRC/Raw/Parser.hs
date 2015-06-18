@@ -84,7 +84,7 @@ trailing :: Parser ByteString
 trailing = takeTill (\x -> x `elem` "\0\r\n") <?> "trailing" 
         
 user :: Parser User
-user = User <$> takeTill (\x -> x `elem` " \0\r\n") <?> "user"
+user = User <$> takeTill (\x -> x `elem` " @\0\r\n") <?> "user"
 
 
 parseIRC :: ByteString -> (ByteString, Either ([String], String) Message)

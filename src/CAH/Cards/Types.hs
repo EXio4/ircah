@@ -43,8 +43,8 @@ instance FromJSON Metadata where
             =   Metadata
             <$> v .: "name"
             <*> v .: "language"
-    -- A non-Object value is of the wrong type, so fail.
-    parseJSON _          = mzero
+    parseJSON _ = mzero
+    
 instance ToJSON Metadata where
     toJSON (Metadata name language) = object ["name" .= name, "language" .= language]
     

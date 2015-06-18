@@ -31,29 +31,34 @@ reader irc channels clientFn = fix $ \loop -> do
             loop
          (Raw.Message _ _ (Raw.CmdNumber 376)  _) -> do
             forM_ channels $ \(ChannelCfg ch pwd) -> 
-                Raw.irc_send irc (command "JOIN" (T.pack ch : (case pwd of
+                Raw.irc_send irc (command "JOIN" (map T.pack (ch : (case pwd of
                                                                 Nothing -> []
-                                                                Just v  -> [T.pack v])))
+                                                                Just v  -> [v]))))
             next 
          _ -> loop
     where next = do
-            (r,w) <- (,) <$> newChan <*> newChan
-            let irc'client = IRC r w
-            forkIO $ forever $ do
+            reader <- newChan
+            writer <- newChan
+            let irc'client = IRC reader writer
+            forkIO $ forever (do
                 x <- Raw.irc_read irc
                 case x of
                     (Raw.Message _ _ (Raw.Command "PING") params) ->
-                        Raw.irc_send irc (Raw.Message Nothing Nothing (Raw.Command "PONG") params)
-                    rest -> writeChan r rest
-            forkIO $ forever (Raw.irc_send irc =<< readChan w)
+                        writeChan writer (Raw.Message Nothing Nothing (Raw.Command "PONG") params)
+                    _ -> do
+                        writeChan reader x)
+            forkIO $ forever (do
+                x <- readChan writer
+                Raw.irc_send irc x)
             clientFn irc'client
-            
+
             
             
 onIRC_h :: IRC -> Handler IO a -> IO a
 onIRC_h irc handler = do
     x <- Raw.irc_read irc
     run handler x
+    
     
 onIRC :: IRC -> (Raw.Message -> IO ()) -> [Command IO ()] -> IO ()
 onIRC irc fb cmds = onIRC_h irc (Handler cmds (Fallback fb)) 

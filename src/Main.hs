@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main (main) where
+module Main (main,client) where
 
 import           CAH.Cards.Types
 import           CAH.Cards.Import
@@ -9,7 +9,7 @@ import           Data.Set (Set)
 import qualified IRC.Client as IRC
 import           IRC.Types
 import qualified IRC.Commands as IRC
-import           IRC.Raw
+import qualified IRC.Raw as Raw
 import           Control.Monad
 import           Control.Concurrent
 import           System.Environment
@@ -40,15 +40,19 @@ main = do
     [cmd, port, nick, channel] <- getArgs
     case x of
          ["convert", format, json, target] -> convertFN format json target
-         [network  , port  , nick, ch]     -> IRC.connectToIRC (cfg network (read port) nick ch) (forever client)
+         [network  , port  , nick, ch]     ->
+            IRC.connectToIRC (cfg network (read port) nick ch) (forever . client)
          
          
 client :: IRC -> IO ()
 client irc = do
     IRC.onIRC irc 
-        (\x -> print x)
-        [IRC.onChannelMsg $ \user channel msg -> do
+        (\x -> return ())
+        [IRC.onPRIVMSG $ \user channel msg -> do
             case msg of
-                 "!ping" -> IRC.msg irc channel "pong"
-                 _       -> return ()
+                 "!ping" -> do
+                     IRC.msg irc channel "pong"
+                 x      -> putStrLn ("msg :: " ++ show x)
         ]
+
+        
