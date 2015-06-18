@@ -3,3 +3,4 @@ module IRC (
 ) where
 
 import IRC.Types
+import IRC.Commands

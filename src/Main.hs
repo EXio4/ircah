@@ -6,7 +6,7 @@ import           CAH.Cards.Types
 import           CAH.Cards.Import
 import           CAH.Cards.Serialize
 import           Data.Set (Set)
-import           IRC
+import qualified IRC
 import           IRC.Raw
 import           Control.Monad
 import           Control.Concurrent
@@ -37,10 +37,9 @@ main = do
     then convertFN port nick channel
     else connectToIRC_raw network (read port) (irc (BS.pack nick) (BS.pack channel))
     where irc nick channel i = do
-            x <- forkIO (reader i channel)
             irc_send i (Message Nothing Nothing (Command "USER") (Params [Param "x", Param "x", Param "x", Param "x"]))
             irc_send i (Message Nothing Nothing (Command "NICK") (Params [Param nick]))
-            writer i
+            reader i channel
             
 reader :: IRC -> ByteString -> IO ()
 reader irc channel = forever $ do
@@ -53,6 +52,3 @@ reader irc channel = forever $ do
          _ -> return ()
          
          
-writer :: IRC -> IO ()
-writer irc = forever $ do
-    threadDelay 50000

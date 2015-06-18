@@ -1,37 +1,16 @@
 module IRC.Types where
 
 import Data.Text (Text)
+import qualified IRC.Raw.Types as Raw
 
-data In
-    = I_JOIN     User Channel
-    | I_PART     User Channel (Maybe Message)
-    | I_QUIT     User Channel (Maybe Message)
-    | I_CMSG     User Channel        Message
-    | I_CNOTICE  User Channel        Message
-    | I_PMSG     User                Message
-    | I_PNOTICE  User                Message
-    | I_UMODE    Nick          [Mode]
-    | I_CMODE    User Channel  [CMode]
-    | I_ACCOUNT  Nick (Maybe Account)
-    deriving (Show,Eq)
-    
-    
-data Out
-    = O_JOIN Channel
-    | O_PART Channel (Maybe Text)
-    | O_QUIT         (Maybe Text)
-    | O_MSG    Target Text
-    | O_NOTICE Target Text
-    | O_CMODE  Channel [CMode]
-    | O_UMODE  Nick    [Mode]
-    deriving (Show,Eq)
-    
+data Command a = Command (Raw.Message -> Maybe (IO a))
+
 type Channel = Text
 type Nick    = Text
 type Message = Text
 type Account = Text
 type Target  = Text
-    
+
 data Mode = Plus  Char
           | Minus Char
     deriving (Show,Eq)
