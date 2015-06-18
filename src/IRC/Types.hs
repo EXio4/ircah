@@ -20,7 +20,7 @@ module IRC.Types (
 import Data.Text (Text)
 import qualified IRC.Raw.Types as Raw
 
-data Command  m a = Command (Raw.Message -> Maybe (m a))
+data Command  m a = Command (Raw.Message -> Maybe (m (Maybe a)))
 data Fallback m a = Fallback (Raw.Message -> m a)
 
 data Handler m a

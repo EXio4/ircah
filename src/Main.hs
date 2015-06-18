@@ -11,6 +11,8 @@ import           IRC.Types
 import qualified IRC.Commands as IRC
 import qualified IRC.Raw as Raw
 import           Control.Monad
+import           Control.Applicative
+import           Data.Functor
 import           Control.Concurrent
 import           System.Environment
 import           System.IO
@@ -50,9 +52,10 @@ client irc = do
         (\x -> return ())
         [IRC.onPRIVMSG $ \user channel msg -> do
             case msg of
-                 "!ping" -> do
-                     IRC.msg irc channel "pong"
-                 x      -> putStrLn ("msg :: " ++ show x)
+                 "!ping" ->
+                     Just () <$ IRC.msg irc channel "pong"
+                 x      -> 
+                     Nothing <$ putStrLn ("msg :: " ++ show x)
         ]
 
         

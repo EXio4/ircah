@@ -43,17 +43,17 @@ instance UncurryFN y r => UncurryFN (x,y) r where
       
 
 
-genCommand :: (UncurryFN a (m b)) => (Raw.Message -> Maybe a) -> Curry a (m b) -> Command m b
+genCommand :: (UncurryFN a (m (Maybe b))) => (Raw.Message -> Maybe a) -> Curry a (m (Maybe b)) -> Command m b
 genCommand condition fn
     = Command $ \msg -> 
             case condition msg of
                  Nothing -> Nothing
                  Just v  -> Just (uncurryN fn v)
 
-onCommand ::  UncurryFN a (m r)
+onCommand ::  UncurryFN a (m (Maybe r))
       =>   ByteString
       ->  ([Text] -> Maybe a)
-      ->  (User -> Curry a (m r))
+      ->  (User -> Curry a (m (Maybe r)))
       ->  Command m r
 onCommand cmd params_fn fn = genCommand cnd fn
     where cnd (Raw.Message
@@ -68,22 +68,27 @@ onCommand cmd params_fn fn = genCommand cnd fn
           cnd _ = Nothing
 
                  
-onPRIVMSG :: (User -> Target -> Message -> m a) -> Command m a
+onPRIVMSG :: (User -> Target -> Message -> m (Maybe a)) -> Command m a
 onPRIVMSG = onCommand "PRIVMSG" f
     where f [target, msg] = Just (target, (msg, ()))
           f  _            = Nothing
 
-onChannelMsg :: (User -> Channel -> Message -> m a) -> Command m a
+onChannelMsg :: (User -> Channel -> Message -> m (Maybe a)) -> Command m a
 onChannelMsg = onCommand "PRIVMSG" f
     where f [channel , msg] | Just ('#', _) <- T.uncons channel
                             = Just (channel , (msg , ()))
           f  _              = Nothing
 
           
-run :: Handler m a -> Raw.Message -> m a
+run :: Monad m => Handler m a -> Raw.Message -> m a
 run (Handler cmds (Fallback fallback)) msg = go cmds 
     where go []     = fallback msg
-          go ((Command f):fs) | Just x' <- f msg = x'
+          go ((Command f):fs) | Just x' <- f msg
+                              = do 
+                                  y <- x'
+                                  case y of
+                                       Nothing -> go fs
+                                       Just v  -> return v
           go (_:fs) = go fs
 
           
