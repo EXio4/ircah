@@ -58,6 +58,11 @@ executable cah
                       ,IRC.Raw.Parser.Host
                       ,IRC.Raw.Serialize
                       ,IRC.Raw.Network
+                      ,IRC.Types
+                      ,CAH.Cards.Types
+                      ,CAH.Cards.Import
+                      ,CAH.Cards.Serialize
+                      ,Parser.Utils
   
   -- LANGUAGE extensions used by modules in this package.
   -- other-extensions:    
@@ -68,6 +73,10 @@ executable cah
                       ,bytestring == 0.10.*
                       ,network-simple == 0.4.*
                       ,network        == 2.6.*
+                      ,text  == 1.2.*
+                      ,aeson == 0.9.*
+                      ,containers == 0.5.*
+                      ,yaml  == 0.8.*
   
   -- Directories containing source files.
   hs-source-dirs:      src

@@ -8,6 +8,7 @@ import           Control.Monad
 
 import           IRC.Raw.Parser.Host
 import           IRC.Raw.Types
+import           Parser.Utils
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Attoparsec.ByteString.Char8
@@ -18,15 +19,6 @@ import           Data.Attoparsec.ByteString.Char8
   decoding into UTF8 should be done by the high level library (should it?)
 -}
 
-takeTill1 :: (Char -> Bool) -> Parser ByteString 
-takeTill1 f = takeWhile1 (not . f)
-
-lookH :: Char -> Parser ()
-lookH ch = do
-    x <- peekChar'
-    if x == ch
-    then return ()
-    else fail "lookH.." 
 
 crlf :: Parser ()
 crlf = () <$ string "\r\n" 

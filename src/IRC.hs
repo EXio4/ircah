@@ -1,5 +1,5 @@
 module IRC (
-    module IRC.Raw
+    module IRC.Types
 ) where
 
-import IRC.Raw
+import IRC.Types
