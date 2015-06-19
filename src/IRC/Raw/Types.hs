@@ -12,7 +12,7 @@ data Tags    = Tags [Tag]
     deriving (Show,Eq)
     
 data Prefix  = ServerName Host
-             | Prefix Nick (Maybe User) (Maybe Host)
+             | Prefix Nick (Maybe User) (Maybe HostP)
     deriving (Show,Eq)
     
 data Nick    = Nick ByteString
@@ -20,10 +20,15 @@ data Nick    = Nick ByteString
     
 data User    = User ByteString
     deriving (Show,Eq)
+
+data HostP = ValidHost   Host
+           | InvalidHost ByteString
+    deriving (Show,Eq)
     
 data Host    = Host ByteString
     deriving (Show,Eq)
 
+    
 data Command = CmdNumber Int
              | Command ByteString
     deriving (Show,Eq)

@@ -58,10 +58,13 @@ onCommand ::  UncurryFN a (m (Maybe r))
 onCommand cmd params_fn fn = genCommand cnd fn
     where cnd (Raw.Message
                     _
-                    (Just (Raw.Prefix (Raw.Nick nick) (Just (Raw.User ident)) (Just (Raw.Host host))))
+                    (Just (Raw.Prefix (Raw.Nick nick) (Just (Raw.User ident)) (Just hostp)))
                     (Raw.Command cmd_input)
                     (Raw.Params params))
                 | cmd_input == cmd
+                , let host = case hostp of
+                                Raw.ValidHost (Raw.Host h) -> h
+                                Raw.InvalidHost h      -> h
                 , Just rest <- params_fn (map (\(Raw.Param x) -> T.decodeUtf8 x) params)
                 = Just (User (T.decodeUtf8 nick) (T.decodeUtf8 ident) (T.decodeUtf8 host)
                        ,rest)

@@ -43,7 +43,11 @@ serializeVendor :: Vendor -> ByteString
 serializeVendor (Vendor h) = serializeHost h
 
 serializeHost :: Host -> ByteString
-serializeHost (Host h) = h
+serializeHost (Host v) = v
+
+serializeHostP :: HostP -> ByteString
+serializeHostP (ValidHost   h) = serializeHost h
+serializeHostP (InvalidHost h) = h
 
 serializePrefix :: Prefix -> ByteString
 serializePrefix (ServerName h) = serializeHost h
@@ -54,7 +58,7 @@ serializePrefix (Prefix nick user host)
              Just u  -> "!" <> serializeUser u)
     <> (case host of
              Nothing -> ""
-             Just h  -> "@" <> serializeHost h)
+             Just h  -> "@" <> serializeHostP h)
 
 serializeNick :: Nick -> ByteString
 serializeNick (Nick n) = n

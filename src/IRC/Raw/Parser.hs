@@ -51,10 +51,11 @@ prefix
     = ((Prefix 
         <$> nick
         <*> optional (char '!' *> user)
-        <*> optional (char '@' *> host))
+        <*> optional (char '@' *> hostp))
         <* lookH ' ')
     <|> (ServerName <$> host)
     <?> "prefix"
+
 nick :: Parser Nick
 nick = Nick <$> nick' <?> "nick"
     where nick' =
@@ -64,6 +65,10 @@ nick = Nick <$> nick' <?> "nick"
           special x = x `elem` "-_[]\\`^{}" 
           
 
+hostp :: Parser HostP
+hostp =   ValidHost   <$> (host <* lookH ' ')
+      <|> InvalidHost <$> takeWhile (/= ' ') -- nice hack for parsing cloaks
+          
 command :: Parser Command
 command
     =   Command <$> takeWhile1 isAlpha_ascii
