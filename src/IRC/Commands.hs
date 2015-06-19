@@ -5,6 +5,7 @@
 module IRC.Commands (
       onPRIVMSG
     , onJOIN
+    , onPART
     , onQUIT
     , onChannelMsg
     , run
@@ -110,13 +111,18 @@ onJOIN :: (User -> Channel -> [Text] -> m a -> m a) -> Command m a
 onJOIN = onCommand (S "JOIN") f
     where f (channel:metadata) = Just (channel, (metadata, ()))
           f  _                 = Nothing
-     
+ 
+onPART :: (User -> Channel -> Maybe Text -> m a -> m a) -> Command m a
+onPART = onCommand (S "PART") f
+    where f [ch, partmsg] = Just (ch, (Just partmsg, ()))
+          f [ch]          = Just (ch, (Nothing     , ()))
+          f  _            = Nothing
+ 
 onQUIT :: (User -> Maybe Text -> m a -> m a) -> Command m a
 onQUIT = onCommand (S "QUIT") f
     where f [quitmsg] = Just (Just quitmsg, ())
           f []        = Just (Nothing     , ())
           f  _        = Nothing
-     
 onPRIVMSG :: (User -> Target -> Message -> m a -> m a) -> Command m a
 onPRIVMSG = onCommand (S "PRIVMSG") f
     where f [target, msg] = Just (target, (msg, ()))
