@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module IRC.Raw.Parser (parseIRC) where
 
 import           Prelude hiding (takeWhile)

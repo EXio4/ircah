@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 module IRC.NickTracking (
       UID
     , uid

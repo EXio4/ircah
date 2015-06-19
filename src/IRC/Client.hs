@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 module IRC.Client (connectToIRC, onIRC, onIRC_h) where
 
 import           Control.Applicative
@@ -21,7 +20,7 @@ connectToIRC (IRCConfig network port nick sasl channels) fn = do
             Raw.irc_send i (command "USER"  ["x", "x", "x", "x"])
             Raw.irc_send i (command "NICK"  [T.pack nick])
             reader i channels fn
-            
+        
 reader :: IRC -> [ChannelCfg] -> (IRC -> IO a) -> IO a
 reader irc channels clientFn = fix $ \loop -> do
     x <- Raw.irc_read irc

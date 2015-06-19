@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module IRC.Raw.Parser.Host (host, parseHost) where
 
 import           Control.Applicative

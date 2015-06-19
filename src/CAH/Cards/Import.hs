@@ -1,11 +1,10 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables #-}
-
 module CAH.Cards.Import where
 
 import           CAH.Cards.Types
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import           Data.Vector (Vector)
 import qualified Data.ByteString.Lazy as BS
 import           Data.Aeson
 import           Data.Set (Set)
@@ -41,5 +40,5 @@ convertT xs =
           go dlist (x:xs) = go (dlist . (x:)) xs
           go dlist []     = [Txt (T.pack (dlist []))]
           
-parseCards :: (Ord a, FromJSON a) => FilePath -> IO (Maybe (Set a))
+parseCards :: (Ord a, FromJSON a) => FilePath -> IO (Maybe (Vector a))
 parseCards = fmap decode . BS.readFile

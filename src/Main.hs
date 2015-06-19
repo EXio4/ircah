@@ -1,11 +1,11 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Main (main,client) where
 
 import           CAH.Cards.Types
 import           CAH.Cards.Import
 import qualified CAH.Cards.Serialize as Cards
 import           Data.Set (Set)
+import           Data.Vector (Vector)
+import qualified Data.Vector as V
 import qualified IRC.Client as IRC
 import           IRC.Types
 import qualified IRC.Commands as IRC
@@ -63,8 +63,7 @@ client tracker irc = do
                 case IRC.NickTracking.getUID tracker user' of
                      Just v | v == (uid 0)
                          -> IRC.cmd irc "WHO" [channel, "%na"]
-                     _   -> do
-                         IRC.cmd irc "WHO" [user'  , "%na"]
+                     _   -> IRC.cmd irc "WHO" [user'  , "%na"]
                 next 
         ,IRC.onQUIT $ \user msg next -> do
                 case IRC.NickTracking.getUID tracker (userNick user) of

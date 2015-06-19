@@ -68,7 +68,7 @@ executable cah
                       ,Parser.Utils
   
   -- LANGUAGE extensions used by modules in this package.
-  -- other-extensions:    
+  default-extensions:    OverloadedStrings, ScopedTypeVariables
   
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.7 && <4.8
@@ -81,6 +81,7 @@ executable cah
                       ,containers == 0.5.*
                       ,yaml  == 0.8.*
                       ,bimap == 0.3.*
+                      ,vector == 0.10.*
   
   -- Directories containing source files.
   hs-source-dirs:      src

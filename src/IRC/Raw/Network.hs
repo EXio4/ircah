@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module IRC.Raw.Network (connectToIRC_raw) where
 
 import           IRC.Raw.Types

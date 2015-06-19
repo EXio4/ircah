@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module IRC.Raw.Serialize (serialize) where
 
 import           IRC.Raw.Types

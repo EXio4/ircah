@@ -1,6 +1,5 @@
 {-# LANGUAGE RankNTypes, TypeFamilies, MultiParamTypeClasses, FunctionalDependencies #-}
-{-# LANGUAGE FlexibleInstances, FlexibleContexts, ScopedTypeVariables #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
 
 module IRC.Commands (
       onPRIVMSG
@@ -123,6 +122,7 @@ onQUIT = onCommand (S "QUIT") f
     where f [quitmsg] = Just (Just quitmsg, ())
           f []        = Just (Nothing     , ())
           f  _        = Nothing
+          
 onPRIVMSG :: (User -> Target -> Message -> m a -> m a) -> Command m a
 onPRIVMSG = onCommand (S "PRIVMSG") f
     where f [target, msg] = Just (target, (msg, ()))
