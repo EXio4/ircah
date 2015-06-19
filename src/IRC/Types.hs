@@ -28,7 +28,7 @@ import           Data.Monoid
 import           Data.Text (Text)
 import           Control.Applicative
 
-data Command  m a = Command (Raw.Message -> Maybe (m (Maybe a)))
+data Command  m a = Command (Raw.Message -> Maybe (m a -> m a))
 data Fallback m a = Fallback (Raw.Message -> m a)
 
 data Cmd = N Int

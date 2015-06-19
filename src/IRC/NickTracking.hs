@@ -75,31 +75,31 @@ getUID (Tracker _ bmap _) nick = BM.lookup nick bmap
 getAccount :: NickTracker -> UID -> Maybe Account
 getAccount (Tracker _ _ m) uid = M.lookup uid m
 
-handlers :: (Functor m, Monad m) => NickTracker -> (NickTracker -> m a) -> [Command m ()]
+handlers :: (Functor m, Monad m) => NickTracker -> (NickTracker -> m a) -> [Command m a]
 handlers trk fn = [trackingACCOUNT trk fn
                   ,trackingNICK trk fn
                   ,trackingWHOACC trk fn
                   ]
        
-trackingACCOUNT :: (Functor m) => NickTracker -> (NickTracker -> m a) -> Command m ()
+trackingACCOUNT :: (Functor m) => NickTracker -> (NickTracker -> m a) -> Command m a
 trackingACCOUNT tracker continuation = onCommand (S "ACCOUNT") params handler
     where params ["*"]  = Just (Nothing , ())
           params [acc]  = Just (Just acc, ())
           params  _     = Nothing
-          handler (User nick _ _)  Nothing      = Just () <$ continuation (logout nick        tracker)
-          handler (User nick _ _) (Just newacc) = Just () <$ continuation (login  nick newacc tracker)
+          handler (User nick _ _)  Nothing      _ = continuation (logout nick        tracker)
+          handler (User nick _ _) (Just newacc) _ = continuation (login  nick newacc tracker)
        
-trackingWHOACC :: (Functor m) => NickTracker -> (NickTracker -> m a) -> Command m ()
+trackingWHOACC :: (Functor m) => NickTracker -> (NickTracker -> m a) -> Command m a
 trackingWHOACC tracker continuation = onCommandServerHost (N 354) params handler
     where params [_, nick, "0"]  = Just (nick, (Nothing , ()))
           params [_, nick, acc]  = Just (nick, (Just acc, ()))
           params  xs     =  Nothing
-          handler _ nick Nothing       = Just () <$ continuation (logout nick        tracker)
-          handler _ nick (Just newacc) = Just () <$ continuation (login  nick newacc tracker)
+          handler _ nick Nothing       _ = continuation (logout nick        tracker)
+          handler _ nick (Just newacc) _ = continuation (login  nick newacc tracker)
               
               
-trackingNICK :: (Functor m) => NickTracker -> (NickTracker -> m a) -> Command m ()
+trackingNICK :: (Functor m) => NickTracker -> (NickTracker -> m a) -> Command m a
 trackingNICK tracker continuation = onCommand (S "NICK") params handler
     where params [newnick] = Just (newnick, ())
           params  _        = Nothing
-          handler (User old_nick _ _) new_nick = Just () <$ continuation (changeNick old_nick new_nick tracker)
+          handler (User old_nick _ _) new_nick _ = continuation (changeNick old_nick new_nick tracker)

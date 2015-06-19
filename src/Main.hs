@@ -58,26 +58,30 @@ client tracker irc = do
     IRC.onIRC irc
         (\_ -> client tracker irc)
         (IRC.NickTracking.handlers tracker (\trk -> client trk irc) <>
-        [IRC.onJOIN $ \user channel metadata -> do
+        [IRC.onJOIN $ \user channel metadata next -> do
                 let user' = userNick user
                 case IRC.NickTracking.getUID tracker user' of
                      Just v | v == (uid 0)
                          -> IRC.cmd irc "WHO" [channel, "%na"]
                      _   -> do
                          IRC.cmd irc "WHO" [user'  , "%na"]
-                return (Just ())
-        ,IRC.onChannelMsg $ \user channel msg -> do
+                client tracker irc
+        ,IRC.onQUIT $ \user msg next -> do
+                case IRC.NickTracking.getUID tracker (userNick user) of
+                     Just v | v == (uid 0)
+                         -> putStrLn "bot quit!"
+                     _   -> next     
+        ,IRC.onChannelMsg $ \user channel msg next -> do
             case msg of
                  "!ping" -> 
                      IRC.msg irc channel "pong"
                  "!me"   ->
                      IRC.msg irc channel (T.pack (show (IRC.NickTracking.getUID tracker (userNick user))))
-                 "!quit" -> do
+                 "!quit" -> 
                      IRC.cmd irc "QUIT" ["..."]
-                     error "forced crash"
-                 x       -> putStrLn ("msg :: " ++ show x)
-            return (Just ())
+                 x       -> 
+                     putStrLn ("msg :: " ++ show x)
+            client tracker irc
         ])
-    client tracker irc
 
         
