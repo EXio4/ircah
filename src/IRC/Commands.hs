@@ -2,7 +2,18 @@
 {-# LANGUAGE FlexibleInstances, FlexibleContexts, ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module IRC.Commands (onPRIVMSG, onChannelMsg, run, msg, notice, command) where
+module IRC.Commands (
+      onPRIVMSG
+    , onJOIN
+    , onChannelMsg
+    , run
+    , cmd
+    , msg
+    , notice
+    , command
+    , onCommand
+    , onCommandServerHost
+) where
 
 import           Control.Applicative
 import           Control.Monad
@@ -12,6 +23,7 @@ import qualified Data.Text.Encoding as T
 import           Data.ByteString (ByteString)
 import           IRC.Types
 import qualified IRC.Raw as Raw
+import           Debug.Trace
 
 type family Curry pms rt where 
     Curry ()    r = r
@@ -50,8 +62,28 @@ genCommand condition fn
                  Nothing -> Nothing
                  Just v  -> Just (uncurryN fn v)
 
+onCommandServerHost ::  UncurryFN a (m (Maybe r))
+      =>   Cmd
+      ->  ([Text] -> Maybe a)
+      ->  (Host -> Curry a (m (Maybe r)))
+      ->  Command m r
+onCommandServerHost cmd params_fn fn = genCommand cnd fn
+    where cnd (Raw.Message
+                    _
+                    (Just (Raw.ServerName (Raw.Host host)))
+                    cmd_input
+                    (Raw.Params params))
+                | case (cmd, cmd_input) of
+                       (N x, Raw.CmdNumber y) -> trace (show cmd ++ " , " ++ show cmd_input ++ "?") x == y
+                       (S x, Raw.Command   y) -> x == y
+                       (_  , _              ) -> False
+                , Just rest <- params_fn (map (\(Raw.Param x) -> T.decodeUtf8 x) params)
+                = Just (T.decodeUtf8 host
+                       ,rest)
+          cnd _ = Nothing
+                 
 onCommand ::  UncurryFN a (m (Maybe r))
-      =>   ByteString
+      =>   Cmd
       ->  ([Text] -> Maybe a)
       ->  (User -> Curry a (m (Maybe r)))
       ->  Command m r
@@ -59,9 +91,12 @@ onCommand cmd params_fn fn = genCommand cnd fn
     where cnd (Raw.Message
                     _
                     (Just (Raw.Prefix (Raw.Nick nick) (Just (Raw.User ident)) (Just hostp)))
-                    (Raw.Command cmd_input)
+                    cmd_input
                     (Raw.Params params))
-                | cmd_input == cmd
+                | case (cmd, cmd_input) of
+                       (N x, Raw.CmdNumber y) -> x == y
+                       (S x, Raw.Command   y) -> x == y
+                       (_  , _              ) -> False
                 , let host = case hostp of
                                 Raw.ValidHost (Raw.Host h) -> h
                                 Raw.InvalidHost h      -> h
@@ -70,14 +105,19 @@ onCommand cmd params_fn fn = genCommand cnd fn
                        ,rest)
           cnd _ = Nothing
 
-                 
+
+onJOIN :: (User -> Channel -> [Text] -> m (Maybe a)) -> Command m a
+onJOIN = onCommand (S "JOIN") f
+    where f (channel:metadata) = Just (channel, (metadata, ()))
+          f  _                 = Nothing
+          
 onPRIVMSG :: (User -> Target -> Message -> m (Maybe a)) -> Command m a
-onPRIVMSG = onCommand "PRIVMSG" f
+onPRIVMSG = onCommand (S "PRIVMSG") f
     where f [target, msg] = Just (target, (msg, ()))
           f  _            = Nothing
 
 onChannelMsg :: (User -> Channel -> Message -> m (Maybe a)) -> Command m a
-onChannelMsg = onCommand "PRIVMSG" f
+onChannelMsg = onCommand (S "PRIVMSG") f
     where f [channel , msg] | Just ('#', _) <- T.uncons channel
                             = Just (channel , (msg , ()))
           f  _              = Nothing
@@ -94,10 +134,14 @@ run (Handler cmds (Fallback fallback)) msg = go cmds
                                        Just v  -> return v
           go (_:fs) = go fs
 
-          
+         
 encode :: [Text] -> Raw.Params
 encode ts = Raw.Params (map (Raw.Param . T.encodeUtf8) ts)
-    
+
+
+cmd :: Raw.IRC -> Text -> [Text] -> IO ()
+cmd irc cmd params = Raw.irc_send irc (command cmd params)
+
 command :: Text -> [Text] -> Raw.Message
 command cmd params = Raw.Message Nothing Nothing (Raw.Command (T.encodeUtf8 cmd)) (encode params)
     
