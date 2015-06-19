@@ -65,7 +65,7 @@ client tracker irc = do
                          -> IRC.cmd irc "WHO" [channel, "%na"]
                      _   -> do
                          IRC.cmd irc "WHO" [user'  , "%na"]
-                client tracker irc
+                next 
         ,IRC.onQUIT $ \user msg next -> do
                 case IRC.NickTracking.getUID tracker (userNick user) of
                      Just v | v == (uid 0)
