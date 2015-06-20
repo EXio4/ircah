@@ -1,10 +1,9 @@
-{-# LANGUAGE RankNTypes, TypeFamilies, MultiParamTypeClasses, FunctionalDependencies #-}
-{-# LANGUAGE FlexibleInstances, FlexibleContexts #-}
-
+{-# LANGUAGE FlexibleContexts #-}
 module IRC.Commands (
       onPRIVMSG
     , onJOIN
     , onPART
+    , onKICK
     , onQUIT
     , onChannelMsg
     , run
@@ -14,6 +13,7 @@ module IRC.Commands (
     , command
     , onCommand
     , onCommandServerHost
+    ,module Common.Commands
 ) where
 
 import           Control.Applicative
@@ -22,51 +22,16 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.ByteString (ByteString)
+import           Common.Commands
 import           IRC.Types
 import qualified IRC.Raw as Raw
 
-type family Curry pms rt where 
-    Curry ()    r = r
-    Curry (x,y) r = x -> Curry y r
-    
-class CurryFN params ret where
-    curryN :: (params -> ret) -> Curry params ret
-class UncurryFN params ret where
-    uncurryN :: Curry params ret -> (params -> ret)
-    
-instance CurryFN () r where
-    curryN fn = fn ()
-
-instance (CurryFN y r) => CurryFN (x,y) r where
-    curryN fn x
-        = let
-            f' y = fn (x,y)
-          in curryN f'
-
-instance UncurryFN () r where
-    uncurryN fn = \() -> fn
-    
-instance UncurryFN y r => UncurryFN (x,y) r where
-    uncurryN fn (x,y)
-        = let
-            f' = fn x
-          in uncurryN f' y
-                         
-      
-
-
-genCommand :: (UncurryFN a (m r -> m r)) => (Raw.Message -> Maybe a) -> Curry a (m r -> m r) -> Command m r
-genCommand condition fn
-    = Command $ \msg -> 
-            case condition msg of
-                 Nothing -> Nothing
-                 Just v  -> Just (uncurryN fn v)
 
 onCommandServerHost ::  UncurryFN a (m r -> m r)
       =>   Cmd
       ->  ([Text] -> Maybe a)
       ->  (Host -> Curry a (m r -> m r))
-      ->  Command m r
+      ->  Command Raw.Message m r
 onCommandServerHost cmd params_fn fn = genCommand cnd fn
     where cnd (Raw.Message
                     _
@@ -86,7 +51,7 @@ onCommand ::  UncurryFN a (m r -> m r)
       =>   Cmd
       ->  ([Text] -> Maybe a)
       ->  (User -> Curry a (m r -> m r))
-      ->  Command m r
+      ->  Command Raw.Message m r
 onCommand cmd params_fn fn = genCommand cnd fn
     where cnd (Raw.Message
                     _
@@ -106,41 +71,41 @@ onCommand cmd params_fn fn = genCommand cnd fn
           cnd _ = Nothing
 
 
-onJOIN :: (User -> Channel -> [Text] -> m a -> m a) -> Command m a
+onJOIN :: (User -> Channel -> [Text] -> m a -> m a) -> Command Raw.Message m a
 onJOIN = onCommand (S "JOIN") f
     where f (channel:metadata) = Just (channel, (metadata, ()))
           f  _                 = Nothing
  
-onPART :: (User -> Channel -> Maybe Text -> m a -> m a) -> Command m a
+onPART :: (User -> Channel -> Maybe Text -> m a -> m a) -> Command Raw.Message m a
 onPART = onCommand (S "PART") f
     where f [ch, partmsg] = Just (ch, (Just partmsg, ()))
           f [ch]          = Just (ch, (Nothing     , ()))
           f  _            = Nothing
  
-onQUIT :: (User -> Maybe Text -> m a -> m a) -> Command m a
+onQUIT :: (User -> Maybe Text -> m a -> m a) -> Command Raw.Message m a
 onQUIT = onCommand (S "QUIT") f
     where f [quitmsg] = Just (Just quitmsg, ())
           f []        = Just (Nothing     , ())
           f  _        = Nothing
-          
-onPRIVMSG :: (User -> Target -> Message -> m a -> m a) -> Command m a
+   
+onKICK :: (User -> Channel -> Nick -> Maybe Text -> m a -> m a) -> Command Raw.Message m a
+onKICK = onCommand (S "KICK") f
+    where f [ch, kicked, partmsg] = Just (ch, (kicked, (Just partmsg, ())))
+          f [ch, kicked]          = Just (ch, (kicked, (Nothing     , ())))
+          f  _            = Nothing
+
+   
+onPRIVMSG :: (User -> Target -> Message -> m a -> m a) -> Command Raw.Message m a
 onPRIVMSG = onCommand (S "PRIVMSG") f
     where f [target, msg] = Just (target, (msg, ()))
           f  _            = Nothing
 
-onChannelMsg :: (User -> Channel -> Message -> m a -> m a) -> Command m a
+onChannelMsg :: (User -> Channel -> Message -> m a -> m a) -> Command Raw.Message m a
 onChannelMsg = onCommand (S "PRIVMSG") f
     where f [channel , msg] | Just ('#', _) <- T.uncons channel
                             = Just (channel , (msg , ()))
           f  _              = Nothing
 
-          
-run ::  Handler m a -> Raw.Message -> m a
-run (Handler cmds (Fallback fallback)) msg = go cmds 
-    where go []     = fallback msg
-          go ((Command f):fs) | Just x' <- f msg
-                              = x' (go fs)
-          go (_:fs) = go fs
 
          
 encode :: [Text] -> Raw.Params

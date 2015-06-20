@@ -53,11 +53,11 @@ reader irc channels clientFn = fix $ \loop -> do
 
             
             
-onIRC_h :: IRC -> Handler IO a -> IO a
+onIRC_h :: IRC -> Handler Raw.Message IO a -> IO a
 onIRC_h irc handler = do
     x <- Raw.irc_read irc
     run handler x
     
     
-onIRC :: IRC -> (Raw.Message -> IO ()) -> [Command IO ()] -> IO ()
+onIRC :: IRC -> (Raw.Message -> IO ()) -> [Command Raw.Message IO ()] -> IO ()
 onIRC irc fb cmds = onIRC_h irc (Handler cmds (Fallback fb)) 

@@ -61,14 +61,18 @@ executable cah
                       ,IRC.Types
                       ,IRC.Commands
                       ,IRC.Client
+                      ,IRC.Game
                       ,IRC.NickTracking
+                      ,CAH.Game
                       ,CAH.Cards.Types
                       ,CAH.Cards.Import
                       ,CAH.Cards.Serialize
+                      ,Common.Types
+                      ,Common.Commands
                       ,Parser.Utils
   
   -- LANGUAGE extensions used by modules in this package.
-  default-extensions:    OverloadedStrings, ScopedTypeVariables
+  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections
   
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.7 && <4.8

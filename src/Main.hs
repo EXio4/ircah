@@ -1,4 +1,4 @@
-module Main (main,client) where
+module Main (main) where
 
 import           CAH.Cards.Types
 import           CAH.Cards.Import
@@ -6,12 +6,9 @@ import qualified CAH.Cards.Serialize as Cards
 import           Data.Set (Set)
 import           Data.Vector (Vector)
 import qualified Data.Vector as V
+import           IRC.Game
 import qualified IRC.Client as IRC
-import           IRC.Types
-import qualified IRC.Commands as IRC
-import qualified IRC.Raw as Raw
-import qualified IRC.NickTracking as IRC.NickTracking
-import           IRC.NickTracking (NickTracker, uid)
+import           IRC
 import           Control.Monad
 import           Control.Applicative
 import           Data.Functor
@@ -49,34 +46,9 @@ main = do
          ["load_cards", cardPack] -> 
                 print =<< Cards.load cardPack
          [network  , port  , nick, ch]     ->
-            IRC.connectToIRC (cfg network (read port) nick ch) (client (IRC.NickTracking.defTracker (T.pack nick)))
+            IRC.connectToIRC (cfg network (read port) nick ch) (runGame (T.pack nick))
          xs -> putStrLn "invalid params"
          
-         
-client :: NickTracker -> IRC -> IO ()
-client tracker irc = do
-    IRC.onIRC irc
-        (\_ -> client tracker irc)
-        (IRC.NickTracking.handlers tracker (\trk -> client trk irc) <>
-        [IRC.onJOIN $ \user channel metadata next -> do
-                let user' = userNick user
-                case IRC.NickTracking.getUID tracker user' of
-                     Just v | v == (uid 0)
-                         -> IRC.cmd irc "WHO" [channel, "%na"]
-                     _   -> IRC.cmd irc "WHO" [user'  , "%na"]
-                next 
-        ,IRC.onQUIT $ \user msg next -> do
-                case IRC.NickTracking.getUID tracker (userNick user) of
-                     Just v | v == (uid 0)
-                         -> return ()
-                     _   -> next   
-        ,IRC.onChannelMsg $ \user channel msg next -> do
-            case msg of
-                 "!ping" -> IRC.msg irc channel "pong"
-                 "!me"   -> IRC.msg irc channel (T.pack (show (IRC.NickTracking.getUID tracker (userNick user))))
-                 "!quit" -> IRC.cmd irc "QUIT" ["..."]
-                 x       -> putStrLn ("msg :: " ++ show x)
-            client tracker irc
-        ])
+    
 
         
