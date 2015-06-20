@@ -68,18 +68,14 @@ client tracker irc = do
         ,IRC.onQUIT $ \user msg next -> do
                 case IRC.NickTracking.getUID tracker (userNick user) of
                      Just v | v == (uid 0)
-                         -> putStrLn "bot quit!"
-                     _   -> next     
+                         -> return ()
+                     _   -> next   
         ,IRC.onChannelMsg $ \user channel msg next -> do
             case msg of
-                 "!ping" -> 
-                     IRC.msg irc channel "pong"
-                 "!me"   ->
-                     IRC.msg irc channel (T.pack (show (IRC.NickTracking.getUID tracker (userNick user))))
-                 "!quit" -> 
-                     IRC.cmd irc "QUIT" ["..."]
-                 x       -> 
-                     putStrLn ("msg :: " ++ show x)
+                 "!ping" -> IRC.msg irc channel "pong"
+                 "!me"   -> IRC.msg irc channel (T.pack (show (IRC.NickTracking.getUID tracker (userNick user))))
+                 "!quit" -> IRC.cmd irc "QUIT" ["..."]
+                 x       -> putStrLn ("msg :: " ++ show x)
             client tracker irc
         ])
 

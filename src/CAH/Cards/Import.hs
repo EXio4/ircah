@@ -40,5 +40,5 @@ convertT xs =
           go dlist (x:xs) = go (dlist . (x:)) xs
           go dlist []     = [Txt (T.pack (dlist []))]
           
-parseCards :: (Ord a, FromJSON a) => FilePath -> IO (Maybe (Vector a))
+parseCards :: (Ord a, FromJSON a) => FilePath -> IO (Maybe (Set a))
 parseCards = fmap decode . BS.readFile

@@ -8,6 +8,7 @@ import           Control.Monad
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Set as S
+import           Data.Set (Set)
 import qualified Data.Foldable as F
 import           System.IO
 import           Data.Aeson
@@ -20,8 +21,8 @@ data Metadata = Metadata {
 
 data Pack = Pack {
      pack_metadata   :: Metadata
-    ,pack_whitecards :: Vector WhiteCard
-    ,pack_blackcards :: Vector BlackCard
+    ,pack_whitecards :: Set WhiteCard
+    ,pack_blackcards :: Set BlackCard
 } deriving (Show,Eq)
 
 newtype Language = Lang Text
@@ -56,10 +57,10 @@ countHoles (BlackCard x) = length (filter h x)
           h Txt{} = False
     
           
-exportWhiteCards :: Handle -> Vector WhiteCard -> IO ()
+exportWhiteCards :: Handle -> Set WhiteCard -> IO ()
 exportWhiteCards h = F.mapM_ (\(WhiteCard x) -> T.hPutStrLn h x)
 
-exportBlackCards :: Handle -> Vector BlackCard -> IO ()
+exportBlackCards :: Handle -> Set BlackCard -> IO ()
 exportBlackCards h = F.mapM_ (\(BlackCard x) -> f x)
     where f xs = mapM_ (T.hPutStr h . conv) xs >> T.hPutStrLn h ""
           conv (Txt x) = x

@@ -5,6 +5,8 @@ import           System.IO
 import           Control.Monad
 import           Data.Monoid
 import           Control.Applicative
+import           Data.Set (Set)
+import qualified Data.Set as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as T
@@ -45,22 +47,22 @@ loadMetadata ps = do
          Nothing -> return $ Left ["error loading metadata ~" <> ps <> "\n"]
          Just v  -> return $ Right v
 
-loadWhite :: FilePath -> IO (Either [String] (Vector WhiteCard))
+loadWhite :: FilePath -> IO (Either [String] (Set WhiteCard))
 loadWhite = parseOver parseWhiteCard
 
-loadBlack :: FilePath -> IO (Either [String] (Vector BlackCard))
+loadBlack :: FilePath -> IO (Either [String] (Set BlackCard))
 loadBlack = parseOver parseBlackCard
     
 
 parseO :: (ByteString -> Maybe a) -> ByteString -> [a]
 parseO f xs = [ x | y <- BS.lines xs, Just x <- [f y]]
     
-parseOver :: Ord a => (ByteString -> Maybe a) -> FilePath -> IO (Either [String] (Vector a))
+parseOver :: Ord a => (ByteString -> Maybe a) -> FilePath -> IO (Either [String] (Set a))
 parseOver parser path = do
     file <- Exc.try (BS.readFile path)
     case file of 
          Left (x :: IOError) -> return $ Left ["error loading card file ~ " <> path <> " ( " <>  show x <> ")"]
-         Right file -> return $ Right (V.fromList (parseO parser file)) 
+         Right file -> return $ Right (S.fromList (parseO parser file)) 
 
 parseWhiteCard :: ByteString -> Maybe WhiteCard
 parseWhiteCard = Just . WhiteCard . T.decodeUtf8
@@ -82,10 +84,10 @@ parseBlackCard xs = either (const Nothing) Just (parseOnly (BlackCard <$> go) xs
             
 saveMetadata :: Metadata -> FilePath -> IO ()
 saveMetadata md fp = withFile fp WriteMode $ \h -> BS.hPutStr h (YAML.encode md)
-saveWhite :: Vector WhiteCard -> FilePath -> IO ()
+saveWhite :: Set WhiteCard -> FilePath -> IO ()
 saveWhite vect fp = withFile fp WriteMode $ \h ->
                     F.mapM_ (\(WhiteCard x) -> T.hPutStrLn h x) vect
-saveBlack :: Vector BlackCard -> FilePath -> IO ()
+saveBlack :: Set BlackCard -> FilePath -> IO ()
 saveBlack vect fp = withFile fp WriteMode $ \h ->
                     F.mapM_ (\(BlackCard x) -> mapM_ (put h) x >> hPutStrLn h "") vect
     where put h (Txt x) = T.hPutStr h x
