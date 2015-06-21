@@ -9,6 +9,7 @@ import           Data.Vector (Vector)
 import qualified Data.Vector as V
 import           IRC.Game
 import qualified IRC.Client as IRC
+import qualified IRC.NickTracking as Tracker
 import           IRC
 import           Control.Monad
 import           Control.Applicative
@@ -47,7 +48,8 @@ main = do
          ["load_cards", cardPack] -> 
                 print =<< Cards.load cardPack
          [network  , port  , nick, ch]     ->
-            IRC.connectToIRC (cfg network (read port) nick ch) (runGame (T.pack nick))
+            let game = setupPlayTracking (T.pack ch) Tracker.trackerSM 
+            in IRC.connectToIRC (cfg network (read port) nick ch) (IRC.runSM game (Tracker.defTracker (T.pack nick), emptyPlayersList))
          xs -> putStrLn "invalid params"
          
     

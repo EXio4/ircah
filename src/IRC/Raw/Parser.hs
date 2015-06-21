@@ -60,7 +60,7 @@ nick = Nick <$> nick' <?> "nick"
             BS.cons
                 <$> letter_ascii
                 <*> takeWhile (\x -> isAlpha_ascii x || isDigit x || special x)
-          special x = x `elem` "-_[]\\`^{}" 
+          special x = x `elem` "-_[]|\\`^{}" 
           
 
 hostp :: Parser HostP

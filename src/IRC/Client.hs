@@ -1,4 +1,4 @@
-module IRC.Client (connectToIRC, onIRC, onIRC_h) where
+module IRC.Client (connectToIRC, onIRC, onIRC_h, runSM) where
 
 import           Control.Applicative
 import           Control.Monad
@@ -11,6 +11,7 @@ import           Control.Concurrent
 import           Control.Concurrent.Chan
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text             as T
+import           Common.StateMachine
 
 connectToIRC :: IRCConfig -> IRC IO a -> IO a
 connectToIRC (IRCConfig network port nick sasl channels) irc = do
@@ -22,29 +23,30 @@ connectToIRC (IRCConfig network port nick sasl channels) irc = do
             reader channels irc
         
 reader :: Monad m => [ChannelCfg] -> IRC m a -> IRC m a
-reader channels = Raw.mutateIRC write recv
-    where write = Raw.irc_send
-          recv = do
+reader channels = Raw.mutateIRC Raw.irc_send recv
+    where recv = do
               x <- Raw.irc_read
               case x of 
                     (Raw.Message _ _ (Raw.Command "PING") params) -> do
                         Raw.irc_send (Raw.Message Nothing Nothing (Raw.Command "PONG") params)
-                        recv
                     (Raw.Message _ _ (Raw.CmdNumber 376)  _) -> do
                         forM_ channels $ \(ChannelCfg ch pwd) -> 
                             Raw.irc_send (command "JOIN" (map T.pack (ch : (case pwd of
                                                                             Nothing -> []
                                                                             Just v  -> [v]))))
-                        recv
-                    _ -> return x
+                    _ -> return ()
+              return x
 
             
             
-onIRC_h :: Monad m => Handler Raw.Message (IRC m) a -> IRC m a
-onIRC_h handler = do
-    x <- Raw.irc_read
-    run handler x
+onIRC_h :: Monad m => Raw.Message -> Handler Raw.Message (IRC m) a -> IRC m a
+onIRC_h x handler = run handler x
     
-    
---onIRC :: Monad m => (Raw.Message -> IRC m ()) -> [Command Raw.Message (IRC m) ()] -> IRC m ()
-onIRC fb cmds = onIRC_h (Handler cmds (Fallback fb)) 
+onIRC :: Monad m => Raw.Message -> (Raw.Message -> IRC m r) -> [Command Raw.Message (IRC m) r] -> IRC m r
+onIRC msg fb cmds = onIRC_h msg (Handler cmds (Fallback fb)) 
+
+runSM :: Monad m => SM Raw.Message (IRC m) st -> st -> IRC m b
+runSM sm def = go def
+    where go st = do
+            x <- Raw.irc_read
+            go =<< runStep sm x st

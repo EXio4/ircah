@@ -7,7 +7,7 @@ module IRC.NickTracking (
     , getUID
     , getNick
     , getAccount
-    , trackerFSM 
+    , trackerSM 
 ) where
 
 import qualified Data.Bimap as BM
@@ -102,8 +102,8 @@ trackingNICK tracker = onCommand (S "NICK") params handler
           handler (User old_nick _ _) new_nick _ = pure $ changeNick old_nick new_nick tracker
 
         
-trackerFSM :: (Applicative m) => SM Raw.Message m NickTracker 
-trackerFSM
+trackerSM :: (Applicative m) => SM Raw.Message m NickTracker 
+trackerSM
     = SM $ \msg trk ->
             run (Handler
                     [trackingACCOUNT  trk
