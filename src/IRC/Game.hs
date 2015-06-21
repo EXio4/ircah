@@ -1,4 +1,13 @@
-module IRC.Game (setupPlayTracking, emptyPlayersList) where
+module IRC.Game (
+      Players
+    , setupPlayTracking
+    , emptyPlayersList
+    , checkAcc
+    , checkUID
+    , checkNick
+    , uidFromNick
+    , showPlayers
+) where
 
 import           IRC.Types
 import qualified IRC.Client as IRC

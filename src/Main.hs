@@ -8,6 +8,7 @@ import           Data.Set (Set)
 import           Data.Vector (Vector)
 import qualified Data.Vector as V
 import           IRC.Game
+import           CAH.Game
 import qualified IRC.Client as IRC
 import qualified IRC.NickTracking as Tracker
 import           IRC

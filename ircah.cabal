@@ -65,6 +65,7 @@ executable cah
                       ,IRC.Game
                       ,IRC.NickTracking
                       ,CAH.Game
+                      ,CAH.Types
                       ,CAH.Cards.Types
                       ,CAH.Cards.Import
                       ,CAH.Cards.Serialize

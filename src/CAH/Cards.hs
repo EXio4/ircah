@@ -1,7 +1,7 @@
-module IRC.Cards (
-      module IRC.Cards.Serialize
-    , module IRC.Cards.Types
+module CAH.Cards (
+      module CAH.Cards.Serialize
+    , module CAH.Cards.Types
 ) where
 
-import IRC.Cards.Serialize
-import IRC.Cards.Types
+import CAH.Cards.Serialize
+import CAH.Cards.Types
