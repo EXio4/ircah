@@ -12,6 +12,7 @@ import           Data.Bimap (Bimap)
 import           Data.Monoid
 import           Control.Applicative
 import qualified Data.Text as T
+import           Data.Text (Text)
 
 data Players = Players (Bimap UID Account)   -- should use Account(s) as players
     deriving (Show,Eq)
@@ -25,12 +26,27 @@ removePlayer uid (Players bmap) = Players $ BM.delete uid bmap
 addPlayer :: UID -> Account -> Players -> Players
 addPlayer uid acc (Players bmap) = Players $ BM.insert uid acc bmap
   
+checkAcc :: Account -> Players -> Maybe UID
+checkAcc acc (Players bmap) = BM.lookupR acc bmap
  
-showPlayers :: NickTracker -> Players -> String
-showPlayers tracker (Players bmap) = concatMap f (BM.keys bmap)
-    where f uid = case Tracker.getNick tracker uid of
-                    Nothing -> "Accountless " ++ show uid ++ ", "
-                    Just  v -> show uid ++ " <=> " ++ show v ++ ", "
+checkUID :: UID -> Players -> Maybe Account
+checkUID uid (Players bmap) = BM.lookup uid bmap
+ 
+checkNick :: Nick -> Players -> NickTracker -> Maybe Account
+checkNick nick (Players bmap) tracker = Tracker.getUID tracker nick >>= \uid -> BM.lookup uid bmap
+
+uidFromNick :: Nick -> Players -> NickTracker -> Maybe UID 
+uidFromNick nick players tracker = checkNick nick players tracker >>= \acc -> checkAcc acc players
+         
+ 
+showPlayers :: NickTracker -> Players -> Text
+showPlayers tracker (Players bmap) = loop $ map f (BM.toList bmap)
+    where f (uid, acc) = case Tracker.getNick tracker uid of
+                    Nothing -> T.pack (show uid) <> " (ghost, acc = " <> T.pack (show acc) <> ") "
+                    Just  v -> v <> " (" <> acc <> ")"
+          loop []     = ""
+          loop [x]    = x
+          loop (x:xs) = x <> ", " <> loop xs
         
 gameClient :: Players -> NickTracker -> Raw.IRC -> IO ()
 gameClient players tracker irc = do
@@ -53,7 +69,8 @@ gameClient players tracker irc = do
                     case Tracker.getUID tracker (userNick user) of
                         Just v | v == (uid 0)
                             -> return () -- bot quit
-                        Just nick_uid -> gameClient (removePlayer nick_uid players) tracker irc
+                        Just nick_uid -> 
+                                gameClient (removePlayer nick_uid players) tracker irc
                         _             -> next   
             ,IRC.onPART $ \user channel msg next -> do
                     case Tracker.getUID tracker (userNick user) of
@@ -70,15 +87,24 @@ gameClient players tracker irc = do
             ,IRC.onChannelMsg $ \user channel msg next -> do
                 case msg of
                     "!ping"    -> IRC.msg irc channel ("pong " <> userNick user)
+                    "!quit"    ->
+                        case uidFromNick (userNick user) players tracker of
+                             Nothing  -> IRC.msg irc channel (userNick user <> ": you are not joined!")
+                             Just uid -> do
+                                 IRC.msg irc channel (userNick user <> " quit the game")
+                                 gameClient (removePlayer uid players) tracker irc
                     "!join"    -> do
                             case Tracker.getUID tracker (userNick user) >>=
                                     \uid -> fmap (uid,) (Tracker.getAccount tracker uid) of
                                  Nothing -> do -- user w/o login
                                     IRC.msg irc channel (userNick user <> " should identify")
-                                 Just (uid, acc) -> do
-                                    IRC.msg irc channel (userNick user <> " joined") -- should check if there's already an user with that acc
-                                    gameClient (addPlayer uid acc players) tracker irc
-                    "!players" -> IRC.msg irc channel (T.pack (showPlayers tracker players))
+                                 Just (uid, acc) -> 
+                                    case checkAcc acc players of
+                                         Just v -> IRC.msg irc channel (userNick user <> ": you are already joined!")
+                                         Nothing -> do
+                                            IRC.msg irc channel (userNick user <> " joined")
+                                            gameClient (addPlayer uid acc players) tracker irc
+                    "!players" -> IRC.msg irc channel ("Players: " <> (showPlayers tracker players))
                     x          -> return ()
                 next
             ])

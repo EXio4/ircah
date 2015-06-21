@@ -32,6 +32,15 @@ data NickTracker
 uid :: Integer -> UID 
 uid = UID
 
+getNick :: NickTracker -> UID -> Maybe Nick
+getNick (Tracker _ bmap _) uid = BM.lookupR uid bmap
+
+getUID :: NickTracker -> Nick -> Maybe UID
+getUID (Tracker _ bmap _) nick = BM.lookup nick bmap
+
+getAccount :: NickTracker -> UID -> Maybe Account
+getAccount (Tracker _ _ m) uid = M.lookup uid m
+
 data TrackEvent
     = AccLogChange   UID            
                      (Maybe Account) -- Nothing means logout, Just acc means login
@@ -89,15 +98,6 @@ logout nick (Tracker next_uid bmap accs)
 logout nick trk           -- login out a nonexistant nick, adding it
     = addNick nick trk
     
-getNick :: NickTracker -> UID -> Maybe Nick
-getNick (Tracker _ bmap _) uid = BM.lookupR uid bmap
-
-getUID :: NickTracker -> Nick -> Maybe UID
-getUID (Tracker _ bmap _) nick = BM.lookup nick bmap
-
-getAccount :: NickTracker -> UID -> Maybe Account
-getAccount (Tracker _ _ m) uid = M.lookup uid m
-
 handlers :: (Functor m, Monad m) => NickTracker -> (NickTracker -> m a) -> [NickTracker -> Command TrackEvent m a] -> [Command Raw.Message m a]
 handlers trk fn evs
         = [trackingACCOUNT  trk fn evs
