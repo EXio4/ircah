@@ -6,7 +6,6 @@ module IRC.Commands (
     , onKICK
     , onQUIT
     , onChannelMsg
-    , run
     , cmd
     , msg
     , notice
@@ -107,25 +106,24 @@ onChannelMsg = onCommand (S "PRIVMSG") f
           f  _              = Nothing
 
 
-         
 encode :: [Text] -> Raw.Params
 encode ts = Raw.Params (map (Raw.Param . T.encodeUtf8) ts)
 
 
-cmd :: Raw.IRC -> Text -> [Text] -> IO ()
-cmd irc cmd params = Raw.irc_send irc (command cmd params)
+cmd :: Monad m => Text -> [Text] -> IRC m ()
+cmd cmd params = Raw.irc_send (command cmd params)
 
 command :: Text -> [Text] -> Raw.Message
 command cmd params = Raw.Message Nothing Nothing (Raw.Command (T.encodeUtf8 cmd)) (encode params)
     
-privmsg :: Raw.IRC -> User -> Message -> IO ()
-privmsg irc (User target _ _) msg = Raw.irc_send irc (command "PRIVMSG" [target, msg])
+privmsg :: Monad m => User -> Message -> IRC m ()
+privmsg (User target _ _) msg = cmd "PRIVMSG" [target, msg]
 
-msg :: Raw.IRC -> Channel -> Message -> IO ()
-msg irc t m = Raw.irc_send irc (command "PRIVMSG" [t, m])
+msg :: Monad m =>  Channel -> Message -> IRC m ()
+msg t m = cmd "PRIVMSG" [t, m]
 
-notice :: Raw.IRC -> Channel -> Message -> IO ()
-notice irc t m = Raw.irc_send irc (command "NOTICE" [t, m])
+notice :: Monad m => Channel -> Message -> IRC m ()
+notice t m = cmd "NOTICE" [t, m]
 
-privnotice :: Raw.IRC -> User -> Message -> IO ()
-privnotice irc (User target _ _) msg = Raw.irc_send irc (command "NOTICE" [target, msg])
+privnotice :: Monad m => User -> Message -> IRC m ()
+privnotice (User target _ _) msg = cmd "NOTICE" [target, msg]

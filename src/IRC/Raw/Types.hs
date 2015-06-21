@@ -2,6 +2,7 @@ module IRC.Raw.Types where
 
 import Data.ByteString (ByteString) 
 import Control.Concurrent.Chan (Chan)
+import Control.Monad.Trans.Free
 
 {- naive representation of the IRC BNF -}
 
@@ -48,8 +49,14 @@ data Key     = Key (Maybe Vendor) ByteString
 data Vendor  = Vendor Host
     deriving (Show,Eq)
 
-    
-data IRC
-    = IRC
+
+data IRC_Connection
+    = IRC_Connection
         (Chan Message) -- ^ input  stream (IRC -> HS)
         (Chan Message) -- ^ output stream (HS -> IRC)
+        
+data IRCF a 
+        = IRC_Read (Message -> a)
+        | IRC_Send Message a
+
+type IRC = FreeT IRCF

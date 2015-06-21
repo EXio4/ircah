@@ -57,6 +57,7 @@ executable cah
                       ,IRC.Raw.Parser
                       ,IRC.Raw.Parser.Host
                       ,IRC.Raw.Serialize
+                      ,IRC.Raw.Monad
                       ,IRC.Raw.Network
                       ,IRC.Types
                       ,IRC.Commands
@@ -69,10 +70,11 @@ executable cah
                       ,CAH.Cards.Serialize
                       ,Common.Types
                       ,Common.Commands
+                      ,Common.StateMachine
                       ,Parser.Utils
   
   -- LANGUAGE extensions used by modules in this package.
-  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections
+  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections, GADTs
   
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.7 && <4.8
@@ -86,6 +88,8 @@ executable cah
                       ,yaml  == 0.8.*
                       ,bimap == 0.3.*
                       ,vector == 0.10.*
+                      ,free   == 4.12.*
+                      ,transformers == 0.4.3.*
   
   -- Directories containing source files.
   hs-source-dirs:      src

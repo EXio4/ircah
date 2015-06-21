@@ -1,5 +1,6 @@
 module Main (main) where
 
+import           Common.StateMachine
 import           CAH.Cards.Types
 import           CAH.Cards.Import
 import qualified CAH.Cards.Serialize as Cards

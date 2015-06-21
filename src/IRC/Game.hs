@@ -47,7 +47,8 @@ showPlayers tracker (Players bmap) = loop $ map f (BM.toList bmap)
           loop []     = ""
           loop [x]    = x
           loop (x:xs) = x <> ", " <> loop xs
-        
+          
+{-
 gameClient :: Players -> NickTracker -> Raw.IRC -> IO ()
 gameClient players tracker irc = do
         IRC.onIRC irc
@@ -56,8 +57,8 @@ gameClient players tracker irc = do
                 [Tracker.onAccountChange $ \trk uid new_acc next ->
                     gameClient (removePlayer uid players) trk irc
                 ]
-            <>
-            [IRC.onJOIN $ \user channel metadata next -> do
+                <> 
+            ([IRC.onJOIN $ \user channel metadata next -> do
                     let user' = userNick user
                     case Tracker.getUID tracker user' of
                         Just v | v == (uid 0)
@@ -85,15 +86,15 @@ gameClient players tracker irc = do
                         Just nick_uid -> gameClient (removePlayer nick_uid players) tracker irc
                         _             -> next 
             ,IRC.onChannelMsg $ \user channel msg next -> do
-                case msg of
-                    "!ping"    -> IRC.msg irc channel ("pong " <> userNick user)
-                    "!quit"    ->
+                case T.words msg of
+                    ["!ping"]  -> IRC.msg irc channel ("pong " <> userNick user)
+                    ["!quit"]  ->
                         case uidFromNick (userNick user) players tracker of
                              Nothing  -> IRC.msg irc channel (userNick user <> ": you are not joined!")
                              Just uid -> do
                                  IRC.msg irc channel (userNick user <> " quit the game")
                                  gameClient (removePlayer uid players) tracker irc
-                    "!join"    -> do
+                    ["!join"] -> do
                             case Tracker.getUID tracker (userNick user) >>=
                                     \uid -> fmap (uid,) (Tracker.getAccount tracker uid) of
                                  Nothing -> do -- user w/o login
@@ -104,10 +105,12 @@ gameClient players tracker irc = do
                                          Nothing -> do
                                             IRC.msg irc channel (userNick user <> " joined")
                                             gameClient (addPlayer uid acc players) tracker irc
-                    "!players" -> IRC.msg irc channel ("Players: " <> (showPlayers tracker players))
-                    x          -> return ()
+                    ["!players"] -> IRC.msg irc channel ("Players: " <> (showPlayers tracker players))
+                    x            -> return ()
                 next
             ])
+    
+-}
 
-runGame :: Nick -> (Raw.IRC -> IO ())
-runGame nick = gameClient emptyPlayersList (Tracker.defTracker nick)
+runGame :: Nick -> IRC m ()
+runGame nick = undefined -- gameClient emptyPlayersList (Tracker.defTracker nick)
