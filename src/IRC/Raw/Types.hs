@@ -60,3 +60,4 @@ data IRCF a
         | IRC_Send Message a
 
 type IRC = FreeT IRCF
+

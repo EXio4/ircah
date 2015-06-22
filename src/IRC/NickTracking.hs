@@ -75,7 +75,8 @@ logout nick (Tracker next_uid bmap accs)
     = Tracker next_uid bmap (M.delete uid accs)
 logout nick trk           -- login out a nonexistant nick, adding it
     = addNick nick trk
-    
+  
+
 trackingACCOUNT :: (Applicative m) => NickTracker -> Command Raw.Message m NickTracker
 trackingACCOUNT tracker  = onCommand (S "ACCOUNT") params handler
     where params ["*"]  = Just (Nothing , ())
@@ -111,3 +112,4 @@ trackerSM
                     ,trackingWHOACC   trk
                     ]
                     (Fallback (\_ -> pure trk))) msg
+                    

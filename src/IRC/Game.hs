@@ -1,6 +1,5 @@
 module IRC.Game (
       Players
-    , setupPlayTracking
     , emptyPlayersList
     , checkAcc
     , checkUID
@@ -73,7 +72,7 @@ gameClient players tracker irc = do
                     gameClient (removePlayer uid players) trk irc
                 ]            
 -}
-
+{-
 game :: Monad m => Channel -> Raw.Message -> (NickTracker, Players) -> IRC m Players
 game gameChannel raw_message (tracker, players) = 
             IRC.onIRC raw_message
@@ -143,4 +142,4 @@ game gameChannel raw_message (tracker, players) =
 
 setupPlayTracking :: (Applicative m, Monad m) => Channel -> SM Raw.Message (IRC m) NickTracker -> SM Raw.Message (IRC m) (NickTracker, Players)
 setupPlayTracking gameChannel tracker = SM.liftF tracker (game gameChannel)
-                
+-}

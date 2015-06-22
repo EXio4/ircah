@@ -60,6 +60,7 @@ executable cah
                       ,IRC.Raw.Monad
                       ,IRC.Raw.Network
                       ,IRC.Types
+                      ,IRC.FRPTypes
                       ,IRC.Commands
                       ,IRC.Client
                       ,IRC.Game
@@ -75,7 +76,7 @@ executable cah
                       ,Parser.Utils
   
   -- LANGUAGE extensions used by modules in this package.
-  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections, GADTs
+  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections, GADTs, RankNTypes, FlexibleContexts
   
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.7 && <4.8
@@ -91,7 +92,9 @@ executable cah
                       ,vector == 0.10.*
                       ,free   == 4.12.*
                       ,transformers == 0.4.3.*
-  
+                      ,netwire == 5.0.*
+                      ,lens == 4.11
+                      
   -- Directories containing source files.
   hs-source-dirs:      src
   
