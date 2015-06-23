@@ -1,5 +1,6 @@
 module IRC.Game (
       Players
+    , setupPlayerTracking
     , emptyPlayersList
     , checkAcc
     , checkUID
@@ -8,6 +9,7 @@ module IRC.Game (
     , showPlayers
 ) where
 
+import           Prelude hiding ((.), id)
 import           IRC.Types
 import qualified IRC.Client as IRC
 import qualified IRC.Commands as IRC
@@ -17,12 +19,12 @@ import qualified IRC.NickTracking as Tracker
 import           IRC.NickTracking (NickTracker, UID)
 import qualified Data.Bimap as BM
 import           Data.Bimap (Bimap)
-import           Data.Monoid
 import           Control.Applicative
 import qualified Data.Text as T
 import           Data.Text (Text)
 import           Common.StateMachine (SM)
-import qualified Common.StateMachine as SM
+import           Control.Wire
+import           IRC.FRPTypes
 
 data Players = Players (Bimap UID Account)   -- should use Account(s) as players
     deriving (Show,Eq)
@@ -72,11 +74,10 @@ gameClient players tracker irc = do
                     gameClient (removePlayer uid players) trk irc
                 ]            
 -}
-{-
-game :: Monad m => Channel -> Raw.Message -> (NickTracker, Players) -> IRC m Players
-game gameChannel raw_message (tracker, players) = 
-            IRC.onIRC raw_message
-                (\_ -> pure players)
+
+game :: Monad m => Channel -> Wire s () (IRC m) (NickTracker, Raw.Message) Players
+game gameChannel = 
+    stFeedR'l emptyPlayersList $ \tracker players -> 
                 [IRC.onJOIN $ \user channel metadata next -> do
                         let user' = userNick user
                         case Tracker.getUID tracker user' of
@@ -85,31 +86,30 @@ game gameChannel raw_message (tracker, players) =
                                       IRC.cmd "WHO" [channel, "%na"]
                             _   -> IRC.cmd "WHO" [user'  , "%na"]
                         next 
-                ,IRC.onQUIT $ \user msg next -> leaveGameHandler (userNick user) next
+                ,IRC.onQUIT $ \user msg next -> leaveGameHandler tracker players (userNick user) next
                 ,IRC.onPART $ \user channel msg next -> do
                         case Tracker.getUID tracker (userNick user) of
                             Just v | v == Tracker.uid 0 -> next -- bot parting
-                            Just nick_uid -> leaveGameHandler_uid nick_uid next
+                            Just nick_uid -> leaveGameHandler_uid tracker players nick_uid next
                             _             -> next   
                 ,IRC.onKICK $ \user channel kicked msg next -> do
                         case Tracker.getUID tracker kicked of
                             Just v | v == Tracker.uid 0 -> do
                                     IRC.cmd "JOIN" [channel] -- without trying any password, this should store the channels? but is this the right approach?
                                     next -- how should we handle this? (the bot got kicked, just rejoin?)
-                            Just nick_uid -> leaveGameHandler_uid nick_uid next
+                            Just nick_uid -> leaveGameHandler_uid tracker players nick_uid next
                             _             -> next 
                 ,IRC.onChannelMsg $ \user channel msg next -> do
                     let nick = userNick user
                     case T.words msg of
-                        ["!ping"]  -> IRC.msg channel (nick <> ": pong!") *> next
-                        ["!quit"]  -> leaveGameHandler nick next
-                        ["!join"]  | channel == gameChannel -> joinGameHandler nick next 
+                        ["!quit"]  -> leaveGameHandler tracker players nick next
+                        ["!join"]  | channel == gameChannel -> joinGameHandler tracker players nick next 
                         ["!players"] -> IRC.msg channel ("Players: " <> showPlayers tracker players) *> next
                         x            -> next
     
                 ]
     where
-          joinGameHandler nick next =
+          joinGameHandler tracker players nick next =
               case Tracker.getUID tracker nick >>= \uid -> fmap (uid,) (Tracker.getAccount tracker uid) of
                     Nothing -> do -- user w/o login
                         IRC.msg gameChannel (nick <> " should identify")
@@ -120,15 +120,15 @@ game gameChannel raw_message (tracker, players) =
                                 next
                             Just v  -> do
                                 IRC.msg gameChannel (nick <> " was already joined, replacing old player")
-                                return (replacePlayer uid acc players)
+                                return (Just (replacePlayer uid acc players))
                             Nothing -> do
                                 IRC.msg gameChannel (nick <> " joined")
-                                return (addPlayer uid acc players)
-          leaveGameHandler nick next = 
+                                return (Just (addPlayer uid acc players))
+          leaveGameHandler tracker players nick next = 
                 case Tracker.getUID tracker nick of
                      Nothing  -> next -- untracked nick? 
-                     Just uid -> leaveGameHandler_uid uid next
-          leaveGameHandler_uid uid next
+                     Just uid -> leaveGameHandler_uid tracker players uid next
+          leaveGameHandler_uid tracker players uid next
                 | uid == Tracker.uid 0 = next -- it's ourselves
                 | otherwise = case checkUID uid players of
                         Nothing -> next -- he's not playing
@@ -138,8 +138,7 @@ game gameChannel raw_message (tracker, players) =
                                     next
                                  Just nick -> do
                                     IRC.msg gameChannel (nick <> " left the game!")
-                                    return (removePlayer uid players)
+                                    return (Just (removePlayer uid players))
 
-setupPlayTracking :: (Applicative m, Monad m) => Channel -> SM Raw.Message (IRC m) NickTracker -> SM Raw.Message (IRC m) (NickTracker, Players)
-setupPlayTracking gameChannel tracker = SM.liftF tracker (game gameChannel)
--}
+setupPlayerTracking :: (Applicative m, Monad m) => Channel -> Wire s () (IRC m) (NickTracker, Raw.Message) Players
+setupPlayerTracking = game

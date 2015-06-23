@@ -12,10 +12,10 @@ newtype Points = Points Integer
     deriving (Show,Eq,Ord)
     
 data EventPlayer
-        = PlayCard   Account Int 
+        = PlayCards  Account [Int] 
         | PickWinner Account Int
-        | TellCards  Account [WhiteCard]
-        | TellBlackCard BlackCard
+        | TellCards  Account
+        | TellBlackCard
 
 data GameState 
     = NoGame

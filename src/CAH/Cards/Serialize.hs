@@ -24,7 +24,7 @@ import qualified Control.Exception as Exc
 -- this should return IO (Either String Pack)
 
 metadataFile,whiteFiles,blackFiles :: FilePath -> FilePath
-[metadataFile,whiteFiles,blackFiles] = map (flip (<>)) ["/metadata", "/cards/whites.txt", "/cards/blacks.txt"]
+[metadataFile,whiteFiles,blackFiles] = map (flip (<>)) ["/metadata", "/cards/white.txt", "/cards/black.txt"]
 
 load :: FilePath -> IO (Either [String] Pack)
 load directory 

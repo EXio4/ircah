@@ -7,19 +7,22 @@ module IRC.NickTracking (
     , getUID
     , getNick
     , getAccount
-    , trackerSM 
+    , getAccFromNick
+    , tracker
 ) where
 
+import           Prelude hiding ((.), id)
 import qualified Data.Bimap as BM
 import           Data.Bimap (Bimap)
 import qualified Data.Map.Strict as M
 import           Data.Map   (Map)
 import           Data.Functor
 import           Control.Applicative
-import           Common.StateMachine
+import           Control.Wire
 import qualified IRC.Raw as Raw
 import           IRC.Types
 import           IRC.Commands
+import           IRC.FRPTypes
 
 data NickTracker
     = Tracker 
@@ -39,6 +42,9 @@ getUID (Tracker _ bmap _) nick = BM.lookup nick bmap
 
 getAccount :: NickTracker -> UID -> Maybe Account
 getAccount (Tracker _ _ m) uid = M.lookup uid m
+    
+getAccFromNick :: NickTracker -> Nick -> Maybe Account
+getAccFromNick trk n = getUID trk n >>= getAccount trk
     
 emptyTracker :: NickTracker
 emptyTracker = Tracker (UID 0) BM.empty M.empty
@@ -77,39 +83,39 @@ logout nick trk           -- login out a nonexistant nick, adding it
     = addNick nick trk
   
 
-trackingACCOUNT :: (Applicative m) => NickTracker -> Command Raw.Message m NickTracker
+trackingACCOUNT :: (Applicative m) => NickTracker -> Command Raw.Message m (Maybe NickTracker)
 trackingACCOUNT tracker  = onCommand (S "ACCOUNT") params handler
     where params ["*"]  = Just (Nothing , ())
           params [acc]  = Just (Just acc, ())
           params  _     = Nothing
-          handler (User nick _ _) x _ = pure $ case x of 
+          handler (User nick _ _) x _ = pure . Just $ case x of 
                                             Nothing     -> logout nick tracker
                                             Just newacc -> login  nick newacc tracker
        
-trackingWHOACC :: (Applicative m) => NickTracker -> Command Raw.Message m NickTracker
+trackingWHOACC :: (Applicative m) => NickTracker -> Command Raw.Message m (Maybe NickTracker)
 trackingWHOACC tracker = onCommandServerHost (N 354) params handler
     where params [_, nick, "0"]  = Just (nick, (Nothing , ()))
           params [_, nick, acc]  = Just (nick, (Just acc, ()))
           params  xs     =  Nothing
-          handler _ nick x _ =  pure $ case x of 
+          handler _ nick x _ =  pure . Just $ case x of 
                                     Nothing     -> logout nick tracker
                                     Just newacc -> login  nick newacc tracker
               
               
-trackingNICK :: (Applicative m) => NickTracker -> Command Raw.Message m NickTracker
+trackingNICK :: (Applicative m) => NickTracker -> Command Raw.Message m (Maybe NickTracker)
 trackingNICK tracker = onCommand (S "NICK") params handler
     where params [newnick] = Just (newnick, ())
           params  _        = Nothing
-          handler (User old_nick _ _) new_nick _ = pure $ changeNick old_nick new_nick tracker
+          handler (User old_nick _ _) new_nick _ = pure . Just $ changeNick old_nick new_nick tracker
 
         
-trackerSM :: (Applicative m) => SM Raw.Message m NickTracker 
-trackerSM
-    = SM $ \msg trk ->
-            run (Handler
-                    [trackingACCOUNT  trk
-                    ,trackingNICK     trk
-                    ,trackingWHOACC   trk
-                    ]
-                    (Fallback (\_ -> pure trk))) msg
+tracker :: Monad m => Nick ->  Wire s () (IRC m) Raw.Message NickTracker
+tracker nick
+    = stFeedR (defTracker nick) $ \s ->
+                [trackingACCOUNT  s
+                ,trackingNICK     s
+                ,trackingWHOACC   s
+                ]
+ 
                     
+

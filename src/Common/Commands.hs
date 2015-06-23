@@ -22,7 +22,7 @@ instance (Applicative m, Monoid e) => Monoid (Handler msg m e) where
         mempty = Handler [] (Fallback (\msg -> pure mempty))
         (Handler cm1 (Fallback fb1)) `mappend` (Handler cm2 (Fallback fb2))
             = Handler (cm1 <> cm2) (Fallback (\msg -> (<>) <$> fb1 msg <*> fb2 msg))
-   
+         
 type family Curry pms rt where 
     Curry ()    r = r
     Curry (x,y) r = x -> Curry y r
