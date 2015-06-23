@@ -1,16 +1,11 @@
 module Main (main) where
 
-import           Common.StateMachine
 import           CAH.Cards.Types
 import           CAH.Cards.Import
 import qualified CAH.Cards.Serialize as Cards
 import           Data.Set (Set)
-import           Data.Vector (Vector)
-import qualified Data.Vector as V
 import           IRC.Game
-import           CAH.Game
 import qualified IRC.Client as IRC
-import qualified IRC.NickTracking as Tracker
 import           IRC
 import           Control.Monad
 import           Control.Applicative
@@ -48,9 +43,15 @@ main = do
          ["convert", format, json, target] -> convertFN format json target
          ["load_cards", cardPack] -> 
                 print =<< Cards.load cardPack
-         [network  , port  , nick, ch]     ->
-            let game = setupPlayTracking (T.pack ch) Tracker.trackerSM 
-            in IRC.connectToIRC (cfg network (read port) nick ch) (IRC.runSM game (Tracker.defTracker (T.pack nick), emptyPlayersList))
+         [network  , port  , nick, ch]     -> do
+                defPackE <- Cards.load "packs/default"
+                case defPackE of
+                     Left xs -> do
+                         putStrLn "error loading default pack"
+                         forM_ xs print
+                     Right defPack -> 
+                         let irc_config = cfg network (read port) nick ch
+                         in runGame irc_config [defPack] (game (T.pack nick) (T.pack ch))
          xs -> putStrLn "invalid params"
          
     

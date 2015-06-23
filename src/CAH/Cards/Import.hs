@@ -4,7 +4,6 @@ import           CAH.Cards.Types
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import           Data.Vector (Vector)
 import qualified Data.ByteString.Lazy as BS
 import           Data.Aeson
 import           Data.Set (Set)

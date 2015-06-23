@@ -63,19 +63,15 @@ executable cah
                       ,IRC.Commands
                       ,IRC.Client
                       ,IRC.Game
-                      ,IRC.NickTracking
-                      ,CAH.Game
-                      ,CAH.Types
                       ,CAH.Cards.Types
                       ,CAH.Cards.Import
                       ,CAH.Cards.Serialize
                       ,Common.Types
                       ,Common.Commands
-                      ,Common.StateMachine
                       ,Parser.Utils
   
   -- LANGUAGE extensions used by modules in this package.
-  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections, GADTs
+  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections, GADTs, FlexibleContexts, RankNTypes
   
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.7 && <4.8
@@ -88,9 +84,11 @@ executable cah
                       ,containers == 0.5.*
                       ,yaml  == 0.8.*
                       ,bimap == 0.3.*
-                      ,vector == 0.10.*
                       ,free   == 4.12.*
                       ,transformers == 0.4.3.*
+                      ,lens   == 4.11
+                      ,mtl    == 2.2.*
+                      ,random  == 1.1
   
   -- Directories containing source files.
   hs-source-dirs:      src

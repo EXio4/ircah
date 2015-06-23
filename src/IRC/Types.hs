@@ -1,29 +1,19 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving, TemplateHaskell #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module IRC.Types (
-     User(..)
-    ,Channel
-    ,Nick
-    ,Message
-    ,Ident
-    ,Host
-    ,Account
-    ,Target
-    ,Mode(..)
-    ,CMode(..)
-    ,SASLCfg(..)
-    ,ChannelCfg(..)
-    ,IRCConfig(..)
-    ,Raw.IRC(..)
-    ,Cmd(..)
-    ,userNick
-) where
+module IRC.Types  where
 
+import           Control.Lens
+import           CAH.Cards.Types
+import           Data.Set  (Set)
+import           Data.Map  (Map)
 import qualified IRC.Raw.Types as Raw
+import           CAH.Cards.Types
 import           Data.ByteString (ByteString)
 import           Data.Monoid
 import           Data.Text (Text)
 import           Control.Applicative
+import           System.Random
 
 data Cmd = N Int
          | S ByteString
@@ -66,3 +56,26 @@ data IRCConfig = IRCConfig {
     ,config_sasl     :: Maybe SASLCfg
     ,config_channels :: [ChannelCfg]
 } deriving (Show,Eq)
+
+
+type Player = Nick
+
+newtype Points = Points Integer
+    deriving (Show,Eq,Ord,Num)
+
+
+data Game = GS {
+            _stdGen        :: StdGen
+           ,_gameGoingOn   :: Bool
+           ,_whiteCards    :: Set WhiteCard
+           ,_blackCards    :: Set BlackCard
+           ,_points        :: Map Player Points
+           ,_players       :: Map Player (Set WhiteCard) -- ^ current players (and their cards)
+           ,_blackCard     :: Maybe BlackCard            -- ^ black card on the table
+           ,_czar          :: Maybe Player               -- ^ czar
+           ,_waitingFor    :: [Player]                   -- ^ players we're waiting for
+           ,_alreadyPlayed :: Map Player WhiteCard       -- ^ players with their picks
+} deriving (Show)
+
+
+makeLenses ''Game

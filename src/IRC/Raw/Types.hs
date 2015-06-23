@@ -1,8 +1,8 @@
 module IRC.Raw.Types where
 
-import Data.ByteString (ByteString) 
-import Control.Concurrent.Chan (Chan)
-import Control.Monad.Trans.Free
+import           Data.ByteString (ByteString) 
+import           Control.Concurrent.Chan (Chan)
+import           Control.Monad.Trans.Free
 
 {- naive representation of the IRC BNF -}
 

@@ -110,20 +110,20 @@ encode :: [Text] -> Raw.Params
 encode ts = Raw.Params (map (Raw.Param . T.encodeUtf8) ts)
 
 
-cmd :: Monad m => Text -> [Text] -> IRC m ()
+cmd :: Monad m => Text -> [Text] -> Raw.IRC m ()
 cmd cmd params = Raw.irc_send (command cmd params)
 
 command :: Text -> [Text] -> Raw.Message
 command cmd params = Raw.Message Nothing Nothing (Raw.Command (T.encodeUtf8 cmd)) (encode params)
     
-privmsg :: Monad m => User -> Message -> IRC m ()
+privmsg :: Monad m => User -> Message -> Raw.IRC m ()
 privmsg (User target _ _) msg = cmd "PRIVMSG" [target, msg]
 
-msg :: Monad m =>  Channel -> Message -> IRC m ()
+msg :: Monad m =>  Channel -> Message -> Raw.IRC m ()
 msg t m = cmd "PRIVMSG" [t, m]
 
-notice :: Monad m => Channel -> Message -> IRC m ()
+notice :: Monad m => Channel -> Message -> Raw.IRC m ()
 notice t m = cmd "NOTICE" [t, m]
 
-privnotice :: Monad m => User -> Message -> IRC m ()
+privnotice :: Monad m => User -> Message -> Raw.IRC m ()
 privnotice (User target _ _) msg = cmd "NOTICE" [target, msg]

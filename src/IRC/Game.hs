@@ -1,146 +1,120 @@
-module IRC.Game (
-      Players
-    , setupPlayTracking
-    , emptyPlayersList
-    , checkAcc
-    , checkUID
-    , checkNick
-    , uidFromNick
-    , showPlayers
-) where
+
+module IRC.Game where
 
 import           IRC.Types
 import qualified IRC.Client as IRC
 import qualified IRC.Commands as IRC
 import qualified IRC as IRC
 import qualified IRC.Raw as Raw
-import qualified IRC.NickTracking as Tracker
-import           IRC.NickTracking (NickTracker, UID)
-import qualified Data.Bimap as BM
-import           Data.Bimap (Bimap)
+import qualified IRC.Raw as IRC (irc_read, irc_send)
+import           IRC.Raw.Types (IRC)
 import           Data.Monoid
 import           Control.Applicative
 import qualified Data.Text as T
 import           Data.Text (Text)
-import           Common.StateMachine (SM)
-import qualified Common.StateMachine as SM
+import           Control.Monad.State
+import qualified Data.Map.Strict as M
+import           Data.Map (Map)
+import           Data.Set (Set)
+import qualified Data.Set as S
+import           Control.Lens
+import           System.Random
+import           CAH.Cards.Types
+import           Control.Monad.Trans.Free
 
-data Players = Players (Bimap UID Account)   -- should use Account(s) as players
-    deriving (Show,Eq)
+funpack :: [Pack] -> (Set WhiteCard, Set BlackCard)
+funpack [] = (S.empty, S.empty)
+funpack ((Pack _ w b):xs) = 
+        (S.union w w', S.union b b')
+    where ~(w', b') = funpack xs
 
-emptyPlayersList :: Players
-emptyPlayersList = Players BM.empty
+boolL'M :: MonadState s m => Getting a s a -> (a -> m Bool) -> m r -> m r -> m r
+boolL'M lens cond t f = do
+    x <- use lens
+    c <- cond x
+    if c
+    then t
+    else f
+
+boolL :: MonadState s m => Getting a s a -> (a -> Bool) -> m r -> m r -> m r
+boolL lens cond t f = boolL'M lens (return . cond) t f
+
+isNotPlaying player next = boolL players (M.notMember player) next (return ())
+isPlaying player next = boolL players (M.member player) next (return ())
+
+numPlayers :: MonadState Game m => m Int
+numPlayers = uses players M.size
     
-removePlayer :: UID -> Players -> Players
-removePlayer uid (Players bmap) = Players $ BM.delete uid bmap
 
-replacePlayer :: UID -> Account -> Players -> Players
-replacePlayer uid acc (Players bmap) = Players $ BM.insert uid acc (BM.deleteR acc bmap)
-
-addPlayer :: UID -> Account -> Players -> Players
-addPlayer uid acc (Players bmap) = Players $ BM.insert uid acc bmap
-  
-checkAcc :: Account -> Players -> Maybe UID
-checkAcc acc (Players bmap) = BM.lookupR acc bmap
- 
-checkUID :: UID -> Players -> Maybe Account
-checkUID uid (Players bmap) = BM.lookup uid bmap
- 
-checkNick :: Nick -> Players -> NickTracker -> Maybe Account
-checkNick nick (Players bmap) tracker = Tracker.getUID tracker nick >>= \uid -> BM.lookup uid bmap
-
-uidFromNick :: Nick -> Players -> NickTracker -> Maybe UID 
-uidFromNick nick players tracker = checkNick nick players tracker >>= \acc -> checkAcc acc players
-         
- 
-showPlayers :: NickTracker -> Players -> Text
-showPlayers tracker (Players bmap) = loop $ map f (BM.toList bmap)
-    where f (uid, acc) = case Tracker.getNick tracker uid of
-                    Nothing -> T.pack (show uid) <> " (ghost, acc = " <> T.pack (show acc) <> ") "
-                    Just  v -> v <> " (" <> acc <> ")"
-          loop []     = ""
-          loop [x]    = x
-          loop (x:xs) = x <> ", " <> loop xs
-          
-
-{-
-gameClient :: Players -> NickTracker -> Raw.IRC -> IO ()
-gameClient players tracker irc = do
-        IRC.onIRC irc
-            (\_ -> gameClient players tracker irc)
-            (Tracker.handlers tracker (\trk -> gameClient players trk irc)
-                [Tracker.onAccountChange $ \trk uid new_acc next ->
-                    gameClient (removePlayer uid players) trk irc
-                ]            
--}
-
-game :: Monad m => Channel -> Raw.Message -> (NickTracker, Players) -> IRC m Players
-game gameChannel raw_message (tracker, players) = 
-            IRC.onIRC raw_message
-                (\_ -> pure players)
-                [IRC.onJOIN $ \user channel metadata next -> do
-                        let user' = userNick user
-                        case Tracker.getUID tracker user' of
-                            Just v | v == Tracker.uid 0
-                                -> do IRC.cmd "CS"  ["op", channel]
-                                      IRC.cmd "WHO" [channel, "%na"]
-                            _   -> IRC.cmd "WHO" [user'  , "%na"]
-                        next 
-                ,IRC.onQUIT $ \user msg next -> leaveGameHandler (userNick user) next
-                ,IRC.onPART $ \user channel msg next -> do
-                        case Tracker.getUID tracker (userNick user) of
-                            Just v | v == Tracker.uid 0 -> next -- bot parting
-                            Just nick_uid -> leaveGameHandler_uid nick_uid next
-                            _             -> next   
-                ,IRC.onKICK $ \user channel kicked msg next -> do
-                        case Tracker.getUID tracker kicked of
-                            Just v | v == Tracker.uid 0 -> do
-                                    IRC.cmd "JOIN" [channel] -- without trying any password, this should store the channels? but is this the right approach?
-                                    next -- how should we handle this? (the bot got kicked, just rejoin?)
-                            Just nick_uid -> leaveGameHandler_uid nick_uid next
-                            _             -> next 
-                ,IRC.onChannelMsg $ \user channel msg next -> do
-                    let nick = userNick user
-                    case T.words msg of
-                        ["!ping"]  -> IRC.msg channel (nick <> ": pong!") *> next
-                        ["!quit"]  -> leaveGameHandler nick next
-                        ["!join"]  | channel == gameChannel -> joinGameHandler nick next 
-                        ["!players"] -> IRC.msg channel ("Players: " <> showPlayers tracker players) *> next
-                        x            -> next
+takeWCards :: MonadState Game m => Int -> m (Set WhiteCard)
+takeWCards 0 = return S.empty
+takeWCards n = do
+    x <- use whiteCards
+    return S.empty
     
+
+cmds :: Monad m => User -> Text -> m () -> Char -> [(Text, (User, Channel) -> Nick -> [Text] -> m r)] -> m ()
+cmds usr msg next prefix cmds =
+    case T.words msg of
+            [] -> next
+            (x:xs) ->
+                case T.uncons x of
+                     Just (c, cmd_input) | c == prefix -> do
+                         mapM_ (\f -> f (usr,msg) (userNick usr) xs) [ f | (cmd,f) <- cmds, cmd == cmd_input ] 
+                     _ -> next
+
+
+initialState :: Set WhiteCard -> Set BlackCard -> Game
+initialState white black = GS {
+     _stdGen        = mkStdGen 42
+    ,_gameGoingOn   = False
+    ,_whiteCards    = white
+    ,_blackCards    = black
+    ,_players       = M.fromList []
+    ,_points        = M.fromList []
+    ,_blackCard     = Nothing
+    ,_czar          = Nothing
+    ,_waitingFor    = []
+    ,_alreadyPlayed = M.fromList []
+}
+            
+game :: Monad m => Nick -> Channel -> IRC (StateT Game m) ()
+game botNick gameChannel = forever loop
+    where loop = do
+            raw_msg <- IRC.irc_read
+            IRC.onIRC raw_msg
+                (\_ -> pure ())
+                [IRC.onChannelMsg $ \user channel msg next -> do
+                    if channel /= gameChannel
+                    then next 
+                    else cmds user msg next '!'
+                      [("join"   , joinHandler)
+                      ,("leave"  , partHandler)
+                      ,("players", playersHandler)
+                      ]
                 ]
-    where
-          joinGameHandler nick next =
-              case Tracker.getUID tracker nick >>= \uid -> fmap (uid,) (Tracker.getAccount tracker uid) of
-                    Nothing -> do -- user w/o login
-                        IRC.msg gameChannel (nick <> " should identify")
-                        next
-                    Just (uid, acc) -> case checkAcc acc players of
-                            Just v | v == uid -> do
-                                IRC.msg gameChannel (nick <> " you are already joined")
-                                next
-                            Just v  -> do
-                                IRC.msg gameChannel (nick <> " was already joined, replacing old player")
-                                return (replacePlayer uid acc players)
-                            Nothing -> do
-                                IRC.msg gameChannel (nick <> " joined")
-                                return (addPlayer uid acc players)
-          leaveGameHandler nick next = 
-                case Tracker.getUID tracker nick of
-                     Nothing  -> next -- untracked nick? 
-                     Just uid -> leaveGameHandler_uid uid next
-          leaveGameHandler_uid uid next
-                | uid == Tracker.uid 0 = next -- it's ourselves
-                | otherwise = case checkUID uid players of
-                        Nothing -> next -- he's not playing
-                        Just _  -> case Tracker.getNick tracker uid of
-                                 Nothing   -> do
-                                    IRC.msg gameChannel ("invariant broken , UID " <> T.pack (show uid) <> " not found in tracker")
-                                    next
-                                 Just nick -> do
-                                    IRC.msg gameChannel (nick <> " left the game!")
-                                    return (removePlayer uid players)
+        
+          joinHandler (user,msg) nick args = do
+                 nick `isNotPlaying` do
+                    crds <- takeWCards 10 -- number of cards
+                    IRC.msg gameChannel (nick <> " joined")
+                    players %= M.insert nick crds
 
-setupPlayTracking :: (Applicative m, Monad m) => Channel -> SM Raw.Message (IRC m) NickTracker -> SM Raw.Message (IRC m) (NickTracker, Players)
-setupPlayTracking gameChannel tracker = SM.liftF tracker (game gameChannel)
-                
+          partHandler (user,msg) nick args =
+                nick `isPlaying` do
+                    IRC.msg gameChannel (nick <> " left")
+                    players %= M.delete nick
+        
+          playersHandler (user,msg) nick args = 
+                IRC.msg gameChannel . T.pack . show =<< use players
+
+
+
+stateGame :: [Pack] -> Game
+stateGame packs  = 
+        let (white,black) = funpack packs
+        in initialState white black
+        
+runGame :: IRCConfig -> [Pack] -> IRC (StateT Game IO) x -> IO x
+runGame cfg packs irc = do
+        IRC.connectToIRC'with (`evalStateT` stateGame packs) cfg irc

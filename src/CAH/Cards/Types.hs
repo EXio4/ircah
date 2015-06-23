@@ -1,7 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module CAH.Cards.Types where
 
-import           Data.Vector (Vector)
 import           Data.Text (Text)
 import           Control.Applicative
 import           Control.Monad
