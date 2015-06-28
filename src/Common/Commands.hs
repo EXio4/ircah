@@ -10,13 +10,15 @@ module Common.Commands (
     , CurryFN(..)
     , Curry
     , run
+    , pushEvent
+    , popEvent
 ) where
     
 
 import Common.Types
 import Data.Monoid
 import Control.Applicative
-    
+import Data.Dynamic
       
 instance (Applicative m, Monoid e) => Monoid (Handler msg m e) where
         mempty = Handler [] (Fallback (\msg -> pure mempty))
@@ -65,3 +67,12 @@ run (Handler cmds (Fallback fallback)) msg = go cmds
           go ((Command f):fs) | Just x' <- f msg
                               = x' (go fs)
           go (_:fs) = go fs
+          
+          
+pushEvent :: Typeable a => a -> Events -> Events
+pushEvent v xs = toDyn v:xs
+
+popEvent :: Typeable a => Events -> Maybe (a, Events)
+popEvent [] = Nothing
+popEvent (x:xs) = fmap (,xs) (fromDynamic x)
+        

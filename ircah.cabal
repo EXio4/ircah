@@ -62,6 +62,7 @@ executable cah
                       ,IRC.Types
                       ,IRC.Commands
                       ,IRC.Client
+                      ,IRC.NickTracking
                       ,IRC.Game
                       ,CAH.Cards.Types
                       ,CAH.Cards.Import
@@ -71,7 +72,7 @@ executable cah
                       ,Parser.Utils
   
   -- LANGUAGE extensions used by modules in this package.
-  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections, GADTs, FlexibleContexts, RankNTypes
+  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections, GADTs, FlexibleContexts, RankNTypes, AutoDeriveTypeable, LambdaCase, MultiWayIf
   
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.7 && <4.8

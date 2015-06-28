@@ -7,6 +7,7 @@ module IRC.NickTracking (
     , getUID
     , getNick
     , getAccount
+    , getAccFromNick
     , trackerSM 
 ) where
 
@@ -16,39 +17,34 @@ import qualified Data.Map.Strict as M
 import           Data.Map   (Map)
 import           Data.Functor
 import           Control.Applicative
-import           Common.StateMachine
+import           Common.Types
 import qualified IRC.Raw as Raw
 import           IRC.Types
 import           IRC.Commands
+import           Control.Lens
+import           Control.Monad.State (MonadState)
 
-data NickTracker
-    = Tracker 
-        !UID                 -- ^ next uid to use
-        !(Bimap Nick UID)    -- ^ bimap keeping the mapping from nicks to UIDs
-        !(Map UID Account)   -- ^ maps from user IDs to textual "user account", missing key means the user doesn't have a registered account
-    deriving (Show,Eq)
-    
 uid :: Integer -> UID 
 uid = UID
 
-getNick :: NickTracker -> UID -> Maybe Nick
-getNick (Tracker _ bmap _) uid = BM.lookupR uid bmap
+getNick :: UID -> NickTracker -> Maybe Nick
+getNick uid (Tracker _ bmap _) = BM.lookupR uid bmap
 
-getUID :: NickTracker -> Nick -> Maybe UID
-getUID (Tracker _ bmap _) nick = BM.lookup nick bmap
+getUID :: Nick -> NickTracker -> Maybe UID
+getUID nick (Tracker _ bmap _) = BM.lookup nick bmap
 
-getAccount :: NickTracker -> UID -> Maybe Account
-getAccount (Tracker _ _ m) uid = M.lookup uid m
-    
+getAccount :: UID -> NickTracker -> Maybe Account
+getAccount uid (Tracker _ _ m) = M.lookup uid m
+   
+getAccFromNick :: Nick -> NickTracker -> Maybe Account
+getAccFromNick nick trk = getUID nick trk >>= (`getAccount` trk)
+   
 emptyTracker :: NickTracker
 emptyTracker = Tracker (UID 0) BM.empty M.empty
     
 defTracker :: Nick -> NickTracker
 defTracker nick = addNick nick emptyTracker
-    
-newtype UID = UID Integer
-    deriving (Show,Eq,Ord)
-    
+        
 changeNick :: Nick -> Nick -> NickTracker -> NickTracker
 changeNick oldnick newnick (Tracker next_uid bmap accs)
     | Just old_uid <- BM.lookup oldnick bmap
@@ -76,38 +72,45 @@ logout nick (Tracker next_uid bmap accs)
 logout nick trk           -- login out a nonexistant nick, adding it
     = addNick nick trk
     
-trackingACCOUNT :: (Applicative m) => NickTracker -> Command Raw.Message m NickTracker
+trackingACCOUNT :: Monad m => NickTracker -> Command Raw.Message m (Maybe (TrackEvent,NickTracker))
 trackingACCOUNT tracker  = onCommand (S "ACCOUNT") params handler
     where params ["*"]  = Just (Nothing , ())
           params [acc]  = Just (Just acc, ())
           params  _     = Nothing
-          handler (User nick _ _) x _ = pure $ case x of 
-                                            Nothing     -> logout nick tracker
-                                            Just newacc -> login  nick newacc tracker
+          handler (User nick _ _) x _ = return . Just $ case x of 
+                                            Nothing     -> (Logout nick        , logout nick tracker)
+                                            Just newacc -> (Login  nick newacc , login  nick newacc tracker)
        
-trackingWHOACC :: (Applicative m) => NickTracker -> Command Raw.Message m NickTracker
+trackingWHOACC :: Monad m => NickTracker -> Command Raw.Message m (Maybe (TrackEvent, NickTracker))
 trackingWHOACC tracker = onCommandServerHost (N 354) params handler
     where params [_, nick, "0"]  = Just (nick, (Nothing , ()))
           params [_, nick, acc]  = Just (nick, (Just acc, ()))
           params  xs     =  Nothing
-          handler _ nick x _ =  pure $ case x of 
-                                    Nothing     -> logout nick tracker
-                                    Just newacc -> login  nick newacc tracker
+          handler _ nick x _ = return . Just $ case x of 
+                                    Nothing     -> (Logout nick        , logout nick tracker      )
+                                    Just newacc -> (Login  nick newacc , login  nick newacc tracker)
               
               
-trackingNICK :: (Applicative m) => NickTracker -> Command Raw.Message m NickTracker
+trackingNICK :: Monad m => NickTracker -> Command Raw.Message m (Maybe (TrackEvent, NickTracker))
 trackingNICK tracker = onCommand (S "NICK") params handler
     where params [newnick] = Just (newnick, ())
           params  _        = Nothing
-          handler (User old_nick _ _) new_nick _ = pure $ changeNick old_nick new_nick tracker
+          handler (User old_nick _ _) new_nick _ = return . Just $ (NickChange old_nick new_nick, changeNick old_nick new_nick tracker)
 
         
-trackerSM :: (Applicative m) => SM Raw.Message m NickTracker 
-trackerSM
-    = SM $ \msg trk ->
-            run (Handler
-                    [trackingACCOUNT  trk
-                    ,trackingNICK     trk
-                    ,trackingWHOACC   trk
-                    ]
-                    (Fallback (\_ -> pure trk))) msg
+trackerSM :: (MonadState (Events, Game) m) => Raw.Message -> m ()
+trackerSM msg = do
+     trk <- use (_2 . nickTracker)
+     x <- run (Handler
+                   [trackingACCOUNT  trk
+                   ,trackingNICK     trk
+                   ,trackingWHOACC   trk
+                   ]
+                   (Fallback (\_ -> return Nothing))) msg
+                   
+     case x of
+          Nothing -> return ()
+          Just (ev, nt) -> do
+              _1 %= pushEvent ev
+              _2 . nickTracker .= nt
+              return ()

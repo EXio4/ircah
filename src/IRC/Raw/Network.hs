@@ -20,7 +20,7 @@ import           Control.Monad.IO.Class
 readerThread :: Handle -> Chan Message -> IO ()
 readerThread handle ch = forever $ do
     x <- BS.hGetLine handle
-    if BS.null x  -- empty line? 
+    if BS.null x  -- ignoring empty lines, why this should ever happen though
     then return ()
     else case parseIRC (x <> "\n") of
          (_, Right m) -> writeChan ch m

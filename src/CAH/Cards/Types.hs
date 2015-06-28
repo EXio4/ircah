@@ -4,6 +4,7 @@ module CAH.Cards.Types where
 import           Data.Text (Text)
 import           Control.Applicative
 import           Control.Monad
+import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Set as S
@@ -55,6 +56,13 @@ countHoles (BlackCard x) = length (filter h x)
           h InvisibleHole = True
           h Txt{} = False
     
+fillBlackCard :: BlackCard -> [Text] -> Text
+fillBlackCard (BlackCard x) = go x 
+    where go (Txt x:xs)            rs  = x <> go xs rs
+          go (VisibleHole:xs)   (r:rs) = r <> go xs rs
+          go (InvisibleHole:xs) (r:rs) = r <> go xs rs
+          go []                    []  = ""
+          go _                     _   = "???"
           
 exportWhiteCards :: Handle -> Set WhiteCard -> IO ()
 exportWhiteCards h = F.mapM_ (\(WhiteCard x) -> T.hPutStrLn h x)
