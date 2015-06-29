@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TemplateHaskell #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 
 module IRC.Types  where
@@ -66,7 +67,7 @@ newtype Channel = Channel Text
 newtype Nick    = Nick    Text
     deriving (Show,Eq,Ord)
 newtype Message = Message Text
-    deriving (Show,Eq)
+    deriving (Show,Eq,Monoid)
 newtype Target  = Target Text
     deriving (Show,Eq)
 newtype Account = Account Text
@@ -122,7 +123,6 @@ data LogicCommand st  where
     PlayerJoin  :: Nick -> Account ->                LogicCommand a
     PlayerLeave :: Nick -> Account ->                LogicCommand a
     StartGame   :: Nick -> Account ->                LogicCommand T_NoGameBeingPlayed
-    CzarLeaves  :: Nick -> Account ->                LogicCommand (T_WaitingFor a)
     PlayerPick  :: Nick -> Account -> [WhiteCard] -> LogicCommand (T_WaitingFor T_Players)
     CzarPick    :: Nick -> Account -> ChoiceN     -> LogicCommand (T_WaitingFor T_Czar)
     ShowTable   ::                                   LogicCommand (T_WaitingFor a)
@@ -138,14 +138,17 @@ data TextMessage
         | GameAlreadyBeingPlayed
         | JoinPlayer         Nick
         | LeavePlayer        Nick
+        | AlreadyPlayed      Nick
         | ReplacingOld       Nick Nick -- the first nick is the "old" one
         | MustPickNCards     Nick Integer
         | PlayersWin        [Nick] Points
         | CzarPicked         Nick Nick BlackCard [WhiteCard] Points -- first is czar
+        | CzarDoesn'tPlay    Nick
         | YourCardsAre       Nick [(Integer, WhiteCard)]
         | TheCardsAre
         | CardsPicked        Nick Integer BlackCard [WhiteCard]
         | PlayersList        [Nick]
+        | CzarLeft           Nick
         | Table              Nick BlackCard
         | StatusWaitingCzar  Nick 
         | StatusWaitPlayers  Nick [Nick] -- first is czar
@@ -177,7 +180,7 @@ data GS a = GS {
            ,_blackCards    :: Set BlackCard
            ,_players       :: Players (Set WhiteCard) -- ^ current players (and their cards)
            ,_current       :: a
-} deriving (Show)
+} deriving (Show,Functor)
 
 changing :: Monad m => (GS r -> GS r') -> Game r' m a -> Game r m a
 changing f gs = do
@@ -192,16 +195,15 @@ data Current w = Current {
            ,_czar          :: Player
            ,_blackCard     :: BlackCard
            ,_currentB      :: w
-} deriving (Show)
+} deriving (Show,Functor)
 
 data WFCzar = WFCzar {
-         _picks :: Map Int (Player, WhiteCard)
-        ,_picked :: Maybe Int
+         _picks :: Map Integer (Player, [WhiteCard])
 } deriving (Show)
 
 data WFPlayers = WFPlayers {
         _waitingFor    :: Set Player                 -- ^ players we're waiting for
-       ,_alreadyPlayed :: Map Player WhiteCard       -- ^ players with their picks
+       ,_alreadyPlayed :: Map Player [WhiteCard]     -- ^ players with their picks
 } deriving (Show)
 
 

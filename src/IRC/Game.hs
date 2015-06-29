@@ -11,11 +11,14 @@ import qualified IRC.NickTracking as Tracker
 import           IRC.Raw.Types (IRC)
 import           Common.Types
 import           Data.Dynamic
+import           Data.Maybe
 import           Control.Monad
 import           Data.Monoid
 import           Control.Applicative
+import qualified Data.Traversable as TV
 import qualified Data.Text as T
 import           Data.Text (Text)
+import qualified Text.Read as TxRead
 import qualified Data.Map.Strict as M
 import qualified Data.Bimap as BM
 import           Data.Map (Map)
@@ -30,12 +33,18 @@ import qualified Control.Monad.Ether.Reader as ER
 import qualified Control.Monad.Ether.State.Strict as ES
 import           Control.Ether.TH
 
+readMaybe :: Read a => Text -> Maybe a
+readMaybe = TxRead.readMaybe . T.unpack 
 
 emptyPlayersList :: Players md
 emptyPlayersList = Players BM.empty M.empty
 
 withMap :: (Map Account md -> a) -> Players md -> a
 withMap f (Players _ m) = f m
+
+set_lookup :: Ord a => Int -> Set a -> Maybe a
+set_lookup n set | n >= 0 && n < S.size set = Just (S.elemAt n set)
+                 | otherwise                = Nothing
 
 -- given an UID, give that user a new account
 replacePlayer :: Show md => UID -> Account -> Players md -> Players md
@@ -53,6 +62,9 @@ replacePlayer uid acc pl@(Players bmap md) = do
 nickChange :: Show md => UID -> Account -> Players md -> Players md
 nickChange uid acc (Players bmap md) = Players x md
     where x = BM.insert uid acc bmap
+          
+meta_update :: (md -> md) -> Account -> Players md -> Players md
+meta_update f acc (Players bmap md) = Players bmap (M.update (Just . f) acc md)
                   
 addPlayer'pure :: Show md => Nick -> Account -> md -> NickTracker -> Players md -> Players md
 addPlayer'pure nick acc meta nicktracker (Players bmap md) = do
@@ -101,14 +113,10 @@ delPlayer nick acc = do
 
 nickPlaying :: (TrackerMonad m, GameMonad r m) => Nick -> m (Maybe Account)
 nickPlaying nick = do
-    acc <- accOf nick
-    case acc of
-         Nothing -> return Nothing
-         Just acc -> do
-            nick' <- nickOf acc
-            case nick' of
-                 Nothing -> return Nothing
-                 Just _  -> return (Just acc)
+    accM <- accOf nick
+    case accM of
+         Nothing  -> return Nothing
+         Just acc -> fmap (acc <$) (nickOf acc)
     
 accOf :: TrackerMonad m => Nick -> m (Maybe Account)
 accOf nick = Tracker.getAccFromNick nick `liftM` ES.get nickTracker
@@ -170,13 +178,29 @@ takeWCards n = do
     el <- takeCardF whiteCards _1
     S.insert el `liftM` takeWCards (n-1)
   
+getTable :: GameMonad (Current wf) m => m (Player, BlackCard)
+getTable = ES.gets gameState $ \gs ->
+            (gs^.current.czar, gs^.current.blackCard)
 
-         
-getBlackCardBeingPlayed :: GameMonad (Current wf) m => m BlackCard
-getBlackCardBeingPlayed = do
-    x <- ES.get gameState
-    return (x^.current.blackCard)
+getCzar :: GameMonad (Current wf) m => m Player
+getCzar = fmap fst getTable
+        
+getCard :: GameMonad x m => Account -> Int -> m (Maybe WhiteCard)
+getCard acc n = do
+    mp <- fmap (withMap id) $ ES.gets gameState (^.players)
+    return $ M.lookup acc mp >>= set_lookup (n-1)
+            
     
+holesBlackCard :: GameMonad (Current wf) m => m Int
+holesBlackCard = fmap (countHoles . snd) getTable
+    
+removeCards :: GameMonad x m => Account -> [Int] -> m ()
+removeCards acc xs = ES.modify gameState (& players %~ meta_update f acc)
+    where f set = S.fromList [ w | (n,w) <- zip [1..] (S.toList set), n `notElem` xs ] 
+    
+        
+getBlackCard :: GameMonad (Current wf) m => m BlackCard
+getBlackCard = ES.gets gameState (^.current.blackCard)
 
 
 initialState :: Set WhiteCard -> Set BlackCard -> GS NoGame
@@ -201,17 +225,25 @@ startingGameWith players black = do
         }
     }
 
+            
+switchToCzar :: [(Integer, (Player, [WhiteCard]))] -> Current WFPlayers -> Current WFCzar
+switchToCzar xs old =
+    old { _currentB = WFCzar {
+                _picks = M.fromList xs
+            }
+        }
+        
     
-toChannel x = do
-    channel <- ER.reader gameInfo (^.gameChannel)    
-    IRC.msg channel (Message (translate x))
-
-toUser nick x =
-    IRC.msg nick (Message (translate x))
+toIRC x = do
+    channel <- ER.reader gameInfo (^.gameChannel)
+    case x of
+         YourCardsAre nick _ ->
+                IRC.notice nick    (Message (translate x))
+         _ ->   IRC.msg    channel (Message (translate x))
 
 mainGame :: (Raw.MonadIRC m, EventsMonad m, TrackerMonad m, GameMonad x m, Functor m) =>
                     (LogicCommand (ToLogicTag x) -> m ()) ->
-                    [(Text, User -> Channel -> [Text] -> m (Either TextMessage (LogicCommand (ToLogicTag x))))] ->
+                    [(Text, User -> Maybe Account -> Channel -> [Text] -> m (Either TextMessage (LogicCommand (ToLogicTag x))))] ->
                     m ()
 mainGame runLogic mcmds = loop
     where loop = do
@@ -231,10 +263,11 @@ mainGame runLogic mcmds = loop
                 IRC.CHMSG user channel msg
                         | gameChannel == channel
                         , Just (cmd, args) <- cmds '!' msg -> do
-                            logCmd <- cmd user channel args
+                            accM <- accOf (userNick user)
+                            logCmd <- cmd user accM channel args
                             case logCmd of
                                  Left NoError    -> loop
-                                 Left x -> toChannel x >> loop
+                                 Left x -> toIRC x >> loop
                                  Right x -> runLogic x 
                 _ -> loop
 
@@ -242,6 +275,7 @@ mainGame runLogic mcmds = loop
                     ,("join"   , joinHandler)
                     ,("part"   , partHandler)
                     ,("players", playersHandler)
+                    ,("myacc"  , myAccHandler)
                     ] ++ mcmds
           
           cmds prefix (Message (T.uncons -> Just (p, (T.words -> (command:params)))))
@@ -250,29 +284,32 @@ mainGame runLogic mcmds = loop
           cmds _ _  = Nothing
           
           
-          joinHandler user channel args = 
-              accOf (userNick user) >>= \case 
+          joinHandler user acc channel args = 
+              case acc of
                 Nothing  -> return (Left (UserNotIdentified (userNick user)))
                 Just acc  -> nickPlaying (userNick user) >>= \case
-                    Just _   -> return $ Left (AlreadyPlaying (userNick user))
+                    Just _  -> return $ Left (AlreadyPlaying (userNick user))
                     Nothing -> do
-                        toChannel (JoinPlayer (userNick user))
+                        toIRC (JoinPlayer (userNick user))
                         return $ Right (PlayerJoin (userNick user) acc)
                        
 
-          partHandler user channel args = do
+          partHandler user _ channel args = do
               accM <- nickPlaying (userNick user)
               case accM of
                    Nothing  -> return $ Left (UserNotPlaying (userNick user))
                    Just acc  -> do
-                       toChannel (LeavePlayer (userNick user))
+                       toIRC (LeavePlayer (userNick user))
                        return $ Right (PlayerLeave (userNick user) acc)
                        
-          playersHandler user channel args = do
+          playersHandler user acc channel args = do
               fmap (Left . PlayersList) playersPrettyList
           
-          pongHandler user channel args = do
+          pongHandler user acc channel args = do
               IRC.msg channel "pong!"
+              return (Left NoError)
+          myAccHandler user acc channel args = do
+              IRC.msg channel $ "your account is " <> (Message (T.pack (show acc)))
               return (Left NoError)
         
 handlePlayerTracking :: (Raw.MonadIRC m, EventsMonad m, TrackerMonad m, GameMonad x m, Functor m) => LogicCommand x' -> m ()
@@ -285,15 +322,28 @@ handlePlayerTracking lcmd = do
                 delPlayer nick acc
             _ -> return () -- not a join/part
 
+getPicks :: (GameMonad (Current WFPlayers) m) => m [(Integer, (Player, [WhiteCard]))]
+getPicks = (zip [1..] . M.toList) <$> ES.gets gameState (^.current.currentB.alreadyPlayed)
+
+tableHandlerC :: Monad m => User -> Maybe Account -> Channel -> [Text] -> Game (Current wf) m (Either TextMessage r)
+tableHandlerC user acc channel txt = Left <$> tableHandler 
+          
+tableHandler :: Monad m => Game (Current wf) m TextMessage
+tableHandler = do
+    (czar, black) <- getTable
+    czarNick <- nickOf czar
+    return $ case czarNick of
+         Nothing -> Debug "czar's nick wasn't found"
+         Just cz -> Table cz black
           
 noGame :: Monad m => Game NoGame m ()
 noGame = mainGame gameHandler [("start", startHandler)]
-    where startHandler user channel args = do
+    where startHandler user _ channel args = do
             pls <- playersPrettyList
             accM <- nickPlaying (userNick user)
             if | length pls < 3 -> return $ Left  (NotEnoughPlayers 3)
                | Just acc <- accM -> do
-                   toChannel (GameStarted pls)
+                   toIRC (GameStarted pls)
                    return $ Right (StartGame (userNick user) acc)
                | otherwise ->
                     return $ Left (UserNotPlaying (userNick user))
@@ -303,28 +353,87 @@ noGame = mainGame gameHandler [("start", startHandler)]
               case p of
                    StartGame _ _ -> do
                        black <- takeBCard
-                       changing (\s -> s & current .~ startingGameWith pls black) gameRunning
+                       changing (\s -> s & current .~ startingGameWith pls black) (do
+                                toIRC =<< tableHandler
+                                gameRunning)
                    _ -> noGame
               
 gameRunning :: Monad m => Game (Current WFPlayers) m ()
-gameRunning = mainGame gameHandler [("pick", pickHandler)
-                                   ,("cards",cardsHandler)]
-    where pickHandler user channel args = do
-                return (Left NoError)
-          cardsHandler user channel args = do
-                return (Left NoError)
-          startHandler p = do
+gameRunning = mainGame gameHandler [("pick"  , pickHandler )
+                                   ,("cards" , cardsHandler)
+                                   ,("start" , startHandler)
+                                   ,("table" , tableHandlerC)]
+    where pickHandler user Nothing    channel args = do
+                return (Left (UserNotPlaying (userNick user)))
+          pickHandler user (Just acc) channel argsTxt = do
+                waitList  <- ES.gets gameState (^.current.currentB.waitingFor)
+                cardHoles <- holesBlackCard 
+                czar      <- getCzar
+                if | acc `S.member` waitList -> do
+                        if | args <- mapMaybe readMaybe argsTxt, cardHoles == length args -> do
+                                    x <- fmap TV.sequence (mapM (getCard acc) args)
+                                    case x of
+                                        Nothing  -> return (Left (MustPickNCards (userNick user) (fromIntegral cardHoles)))
+                                        Just cds -> do
+                                            removeCards acc args
+                                            ES.modify gameState (\gs -> 
+                                                    gs & current.currentB.waitingFor %~ S.delete acc
+                                                       & current.currentB.alreadyPlayed %~ M.insert acc cds)
+                                            return (Right (PlayerPick (userNick user) acc cds))
+                           | otherwise -> return (Left (MustPickNCards (userNick user) (fromIntegral cardHoles)))
+                   | czar == acc -> return (Left (CzarDoesn'tPlay (userNick user)))
+                   | otherwise   -> return (Left (AlreadyPlayed (userNick user)))
+
+          cardsHandler user accM channel args = do
+                x <- playersList
+                return . Left $
+                        if | Just acc <- accM, Just cds <- M.lookup acc x ->
+                              YourCardsAre (userNick user) (zip [1..] (S.toList cds))
+                           | otherwise -> UserNotPlaying (userNick user)
+          startHandler user acc channel args = do
                 return (Left GameAlreadyBeingPlayed)
           gameHandler p = do
               handlePlayerTracking p
               pls <- playersPrettyList
+              cz  <- getCzar
+              waitList <- ES.gets gameState (^.current.currentB.waitingFor)
+              black <- getBlackCard
               if | length pls < 3 -> do
-                    toChannel (NotEnoughPlayers 3)
+                    toIRC (NotEnoughPlayers 3)
                     changing (\s -> s & current .~ NoGame) noGame
-                    -- we delete previous info
-                 | otherwise -> do
+                    -- we deleted all the previous info, we should print the points n stuff
+                 | PlayerLeave nick acc <- p , cz == acc -> do
+                    toIRC (CzarLeft nick)
                     gameRunning
+                 | PlayerLeave nick acc <- p, acc `S.member` waitList -> do
+                     -- if we got there, it means this player ALREADY left and we didn't force the game to end, we "pass" thru
+                     ES.modify gameState (& current.currentB.waitingFor %~ S.delete acc)
+                 | otherwise -> return ()
+              waitList <- ES.gets gameState (^.current.currentB.waitingFor) -- it might have been updated 
+              if | S.null waitList -> do
+                            s <- getPicks
+                            forM_ s $ \(n, (p, cds)) ->
+                                nickOf p >>= \case
+                                    Nothing -> return ()
+                                    Just nk -> toIRC (CardsPicked nk n black cds)
+                            changing (fmap (switchToCzar s)) czarGame
+                 | otherwise -> gameRunning
+                    
 
+czarGame :: Monad m => Game (Current WFCzar) m ()
+czarGame = mainGame gameHandler [("pick"  , pickHandler )
+                                ,("table" , tableHandlerC)]
+    where pickHandler user (Just acc) channel args = do
+                czar <- getCzar
+                if | czar /= acc -> return (Left NoError)
+                   | otherwise   -> do -- the czar picked
+                        return (Left NoError)
+          pickHandler user Nothing channel args = do
+              return (Left NoError)
+    
+          gameHandler p = do
+            czarGame
+                   
                    
 stateGame :: [Pack] -> GS NoGame
 stateGame packs  = 

@@ -36,6 +36,9 @@ fillBlackCard (BlackCard x) = go x
           go []                    []  = ""
           go _                     _   = "???"
           
+pluralWhen b t | b         = t <> "s"
+               | otherwise = t
+          
 translate :: TextMessage -> Text
 translate x =
     case x of
@@ -58,13 +61,17 @@ translate x =
             "wake up! a new game is being played! " <> showPlayers pls
             
         MustPickNCards (Nick n) m ->
-            "you must pick " <> int m <> " cards"
+            "you must pick " <> int m <> " " <> pluralWhen (m > 1) "card"
 
         CzarPicked (Nick czar) (Nick picked) black white (Points n) ->
-            czar <> " picked " <> fillBlackCard black white <> " and " <> picked <> " gets " <> int n <> " awesome point" <>
-                        (if n > 1
-                        then "s"
-                        else "")
+            czar <> " picked " <> fillBlackCard black white <> " and " <> picked <> " gets " <> int n <> " awesome " <> pluralWhen (n > 1) "point"
+
+        CzarDoesn'tPlay (Nick czar) ->
+            czar <> " the czar must not!11!"
+            
+        CzarLeft (Nick n) ->
+            "welp! apparently " <> n <> " left and he happened to be the czar!"
+        
         YourCardsAre (Nick nick) xs -> 
             nick <> "! your cards are: " <> showCards xs
         
@@ -86,6 +93,9 @@ translate x =
         CardsPicked (Nick nick) n black white ->
             int n <> ": " <> fillBlackCard black white
             
+        AlreadyPlayed (Nick nick) ->
+            nick <> ": you already played this round!"
+        
         PlayersList [] ->
             "Nobody's playing"
         
