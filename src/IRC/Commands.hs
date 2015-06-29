@@ -1,19 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-module IRC.Commands (
-      onPRIVMSG
-    , onJOIN
-    , onPART
-    , onKICK
-    , onQUIT
-    , onChannelMsg
-    , cmd
-    , msg
-    , notice
-    , command
-    , onCommand
-    , onCommandServerHost
-    ,module Common.Commands
-) where
+module IRC.Commands where
 
 import           Control.Applicative
 import           Control.Monad
@@ -21,17 +7,13 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.ByteString (ByteString)
-import           Common.Commands
 import           IRC.Types
+import           IRC.Raw.Monad
+import           Data.String
 import qualified IRC.Raw as Raw
-
-
-onCommandServerHost ::  UncurryFN a (m r -> m r)
-      =>   Cmd
-      ->  ([Text] -> Maybe a)
-      ->  (Host -> Curry a (m r -> m r))
-      ->  Command Raw.Message m r
-onCommandServerHost cmd params_fn fn = genCommand cnd fn
+          
+commandMatchServerHost :: Cmd -> ([Text] -> Maybe a) -> Raw.Message -> Maybe (Host, a)
+commandMatchServerHost cmd params_fn = cnd
     where cnd (Raw.Message
                     _
                     (Just (Raw.ServerName (Raw.Host host)))
@@ -45,13 +27,9 @@ onCommandServerHost cmd params_fn fn = genCommand cnd fn
                 = Just (T.decodeUtf8 host
                        ,rest)
           cnd _ = Nothing
-                 
-onCommand ::  UncurryFN a (m r -> m r)
-      =>   Cmd
-      ->  ([Text] -> Maybe a)
-      ->  (User -> Curry a (m r -> m r))
-      ->  Command Raw.Message m r
-onCommand cmd params_fn fn = genCommand cnd fn
+
+commandMatchUser :: Cmd -> ([Text] -> Maybe a) -> Raw.Message -> Maybe (User , a)
+commandMatchUser cmd params_fn = cnd
     where cnd (Raw.Message
                     _
                     (Just (Raw.Prefix (Raw.Nick nick) (Just (Raw.User ident)) (Just hostp)))
@@ -65,65 +43,122 @@ onCommand cmd params_fn fn = genCommand cnd fn
                                 Raw.ValidHost (Raw.Host h) -> h
                                 Raw.InvalidHost h      -> h
                 , Just rest <- params_fn (map (\(Raw.Param x) -> T.decodeUtf8 x) params)
-                = Just (User (T.decodeUtf8 nick) (T.decodeUtf8 ident) (T.decodeUtf8 host)
+                = Just (User (Nick (T.decodeUtf8 nick)) (T.decodeUtf8 ident) (T.decodeUtf8 host)
                        ,rest)
           cnd _ = Nothing
+          
+commandMatchRaw :: (Cmd -> [Text] -> Maybe a) -> Raw.Message -> Maybe a
+commandMatchRaw params_fn = cnd
+    where cnd (Raw.Message
+                    _
+                    _
+                    cmd_input
+                    (Raw.Params params))
+                | let cmd = case cmd_input of
+                       Raw.CmdNumber y -> N y
+                       Raw.Command   y -> S y         
+                = params_fn cmd (map (\(Raw.Param x) -> T.decodeUtf8 x) params)
 
 
-onJOIN :: (User -> Channel -> [Text] -> m a -> m a) -> Command Raw.Message m a
-onJOIN = onCommand (S "JOIN") f
-    where f (channel:metadata) = Just (channel, (metadata, ()))
+join_pattern :: Raw.Message -> Maybe (User , (Channel, [Text]))
+join_pattern = commandMatchUser (S "JOIN") f
+    where f (channel:metadata) = Just (Channel channel, metadata)
           f  _                 = Nothing
+          
+pattern JOIN user channel meta <- (join_pattern -> Just (user,(channel,meta)))
  
-onPART :: (User -> Channel -> Maybe Text -> m a -> m a) -> Command Raw.Message m a
-onPART = onCommand (S "PART") f
-    where f [ch, partmsg] = Just (ch, (Just partmsg, ()))
-          f [ch]          = Just (ch, (Nothing     , ()))
-          f  _            = Nothing
- 
-onQUIT :: (User -> Maybe Text -> m a -> m a) -> Command Raw.Message m a
-onQUIT = onCommand (S "QUIT") f
-    where f [quitmsg] = Just (Just quitmsg, ())
-          f []        = Just (Nothing     , ())
-          f  _        = Nothing
+part_pattern :: Raw.Message -> Maybe (User , (Channel, Maybe Text))
+part_pattern = commandMatchUser (S "PART") f
+    where f [channel]   = Just (Channel channel, Nothing)
+          f [channel,x] = Just (Channel channel, Just x )
+          f  _          = Nothing
+
+pattern PART user channel msg <- (part_pattern -> Just (user,(channel,msg)))
+
+quit_pattern :: Raw.Message -> Maybe (User, (Channel, Maybe Text))
+quit_pattern = commandMatchUser (S "QUIT") f
+    where f [channel]   = Just (Channel channel, Nothing)
+          f [channel,x] = Just (Channel channel, Just x )
+          f _           = Nothing
+
+pattern QUIT user channel msg <- (quit_pattern -> Just (user,(channel,msg)))
+          
+kick_pattern :: Raw.Message -> Maybe (User, (Channel, Nick, Maybe Text))
+kick_pattern = commandMatchUser (S "QUIT") f
+    where f [ch,kicked]          = Just (Channel ch, Nick kicked, Nothing      )
+          f [ch,kicked,partmsg]  = Just (Channel ch, Nick kicked, Just partmsg )
+          f _                    = Nothing
+
+pattern KICK user channel kicked msg <- (kick_pattern -> Just (user,(channel,kicked,msg)))
+          
+channelmsg_pattern :: Raw.Message -> Maybe (User, (Channel, Message))
+channelmsg_pattern = commandMatchUser (S "PRIVMSG") f
+    where f [channel,msg]  | Just ('#', _) <- T.uncons channel
+                           = Just (Channel channel , Message msg)
+          f _              = Nothing
+          
+pattern CHMSG user channel msg <- (channelmsg_pattern -> Just (user,(channel,msg)))
+      
+privmsg_pattern :: Raw.Message -> Maybe (User, (Target,Message))
+privmsg_pattern= commandMatchUser (S "PRIVMSG") f
+    where f [channel,msg]  = Just (Target channel , Message msg)
+          f _              = Nothing
    
-onKICK :: (User -> Channel -> Nick -> Maybe Text -> m a -> m a) -> Command Raw.Message m a
-onKICK = onCommand (S "KICK") f
-    where f [ch, kicked, partmsg] = Just (ch, (kicked, (Just partmsg, ())))
-          f [ch, kicked]          = Just (ch, (kicked, (Nothing     , ())))
-          f  _            = Nothing
+pattern PRIVMSG user target msg <- (privmsg_pattern -> Just (user, (target,msg)))
 
+nick_pattern :: Raw.Message -> Maybe (User, Nick)
+nick_pattern= commandMatchUser (S "PRIVMSG") f
+    where f [new_nick]  = Just (Nick new_nick)
+          f _           = Nothing
    
-onPRIVMSG :: (User -> Target -> Message -> m a -> m a) -> Command Raw.Message m a
-onPRIVMSG = onCommand (S "PRIVMSG") f
-    where f [target, msg] = Just (target, (msg, ()))
-          f  _            = Nothing
+pattern NICK user nick <- (nick_pattern -> Just (user, nick))
+  
+account_pattern :: Raw.Message -> Maybe (User, Maybe Account)
+account_pattern = commandMatchUser (S "ACCOUNT") f
+    where f ["*"]  = Just Nothing
+          f [acc]  = Just (Just (Account acc))
+          f  _     = Nothing
+          
 
-onChannelMsg :: (User -> Channel -> Message -> m a -> m a) -> Command Raw.Message m a
-onChannelMsg = onCommand (S "PRIVMSG") f
-    where f [channel , msg] | Just ('#', _) <- T.uncons channel
-                            = Just (channel , (msg , ()))
-          f  _              = Nothing
+pattern ACCOUNT user acc <- (account_pattern -> Just (user, acc))
+  
+raw_pattern :: Raw.Message -> Maybe (Cmd, [Text])
+raw_pattern = commandMatchRaw f
+    where f cmd params = Just (cmd, params)
 
-
+pattern RAW cmd pms <- (raw_pattern -> Just (cmd,pms))
+  
 encode :: [Text] -> Raw.Params
 encode ts = Raw.Params (map (Raw.Param . T.encodeUtf8) ts)
 
-
-cmd :: Monad m => Text -> [Text] -> Raw.IRC m ()
+cmd :: MonadIRC m => Text -> [Text] -> m ()
 cmd cmd params = Raw.irc_send (command cmd params)
 
 command :: Text -> [Text] -> Raw.Message
 command cmd params = Raw.Message Nothing Nothing (Raw.Command (T.encodeUtf8 cmd)) (encode params)
+          
+msg :: (IRCCommand target, MonadIRC m) => target -> Message -> m ()
+msg = privmsg
+          
+class IRCCommand target where
+    privmsg :: MonadIRC m => target -> Message -> m ()
+    notice  :: MonadIRC m => target -> Message -> m ()
+
+instance IRCCommand User where
+    privmsg (User (Nick target) _ _) (Message msg) = cmd "PRIVMSG" [target, msg]
+    notice  (User (Nick target) _ _) (Message msg) = cmd "NOTICE"  [target, msg]
+
+instance IRCCommand Channel where
+    privmsg (Channel ch) (Message msg) = cmd "PRIVMSG" [ch, msg]
+    notice  (Channel ch) (Message msg) = cmd "NOTICE"  [ch, msg]
+
+instance IRCCommand Nick where
+    privmsg (Nick n) (Message msg) = cmd "PRIVMSG" [n,msg]
+    notice  (Nick n) (Message msg) = cmd "NOTICE"  [n,msg]
     
-privmsg :: Monad m => User -> Message -> Raw.IRC m ()
-privmsg (User target _ _) msg = cmd "PRIVMSG" [target, msg]
-
-msg :: Monad m =>  Channel -> Message -> Raw.IRC m ()
-msg t m = cmd "PRIVMSG" [t, m]
-
-notice :: Monad m => Channel -> Message -> Raw.IRC m ()
-notice t m = cmd "NOTICE" [t, m]
-
-privnotice :: Monad m => User -> Message -> Raw.IRC m ()
-privnotice (User target _ _) msg = cmd "NOTICE" [target, msg]
+instance IRCCommand Target where
+    privmsg (Target t) (Message msg) = cmd "PRIVMSG" [t,msg]
+    notice  (Target t) (Message msg) = cmd "NOTICE"  [t,msg]
+    
+instance IsString Message where
+    fromString = Message . fromString

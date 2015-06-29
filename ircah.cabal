@@ -68,11 +68,14 @@ executable cah
                       ,CAH.Cards.Import
                       ,CAH.Cards.Serialize
                       ,Common.Types
-                      ,Common.Commands
                       ,Parser.Utils
+                      ,Translate
   
   -- LANGUAGE extensions used by modules in this package.
-  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections, GADTs, FlexibleContexts, RankNTypes, AutoDeriveTypeable, LambdaCase, MultiWayIf
+  default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections
+                        ,GADTs, FlexibleContexts, RankNTypes, AutoDeriveTypeable
+                        ,LambdaCase, MultiWayIf, ViewPatterns, PatternSynonyms
+                        ,ConstraintKinds
   
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.7 && <4.8
@@ -89,6 +92,7 @@ executable cah
                       ,transformers == 0.4.3.*
                       ,lens   == 4.11
                       ,mtl    == 2.2.*
+                      ,ether  == 0.2.1.*
                       ,random  == 1.1
   
   -- Directories containing source files.

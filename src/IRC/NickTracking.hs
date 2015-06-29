@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 module IRC.NickTracking (
       UID
     , uid
@@ -22,7 +23,9 @@ import qualified IRC.Raw as Raw
 import           IRC.Types
 import           IRC.Commands
 import           Control.Lens
-import           Control.Monad.State (MonadState)
+import qualified Control.Monad.Ether.State.Strict as ES
+import           Control.Ether.TH
+
 
 uid :: Integer -> UID 
 uid = UID
@@ -70,47 +73,31 @@ logout nick (Tracker next_uid bmap accs)
     | Just uid <- BM.lookup nick bmap
     = Tracker next_uid bmap (M.delete uid accs)
 logout nick trk           -- login out a nonexistant nick, adding it
-    = addNick nick trk
-    
-trackingACCOUNT :: Monad m => NickTracker -> Command Raw.Message m (Maybe (TrackEvent,NickTracker))
-trackingACCOUNT tracker  = onCommand (S "ACCOUNT") params handler
-    where params ["*"]  = Just (Nothing , ())
-          params [acc]  = Just (Just acc, ())
-          params  _     = Nothing
-          handler (User nick _ _) x _ = return . Just $ case x of 
-                                            Nothing     -> (Logout nick        , logout nick tracker)
-                                            Just newacc -> (Login  nick newacc , login  nick newacc tracker)
-       
-trackingWHOACC :: Monad m => NickTracker -> Command Raw.Message m (Maybe (TrackEvent, NickTracker))
-trackingWHOACC tracker = onCommandServerHost (N 354) params handler
-    where params [_, nick, "0"]  = Just (nick, (Nothing , ()))
-          params [_, nick, acc]  = Just (nick, (Just acc, ()))
-          params  xs     =  Nothing
-          handler _ nick x _ = return . Just $ case x of 
-                                    Nothing     -> (Logout nick        , logout nick tracker      )
-                                    Just newacc -> (Login  nick newacc , login  nick newacc tracker)
-              
-              
-trackingNICK :: Monad m => NickTracker -> Command Raw.Message m (Maybe (TrackEvent, NickTracker))
-trackingNICK tracker = onCommand (S "NICK") params handler
-    where params [newnick] = Just (newnick, ())
-          params  _        = Nothing
-          handler (User old_nick _ _) new_nick _ = return . Just $ (NickChange old_nick new_nick, changeNick old_nick new_nick tracker)
-
+    = addNick nick trk              
+            
         
-trackerSM :: (MonadState (Events, Game) m) => Raw.Message -> m ()
+trackerSM :: (EventsMonad m, TrackerMonad m) => Raw.Message -> m ()
 trackerSM msg = do
-     trk <- use (_2 . nickTracker)
-     x <- run (Handler
-                   [trackingACCOUNT  trk
-                   ,trackingNICK     trk
-                   ,trackingWHOACC   trk
-                   ]
-                   (Fallback (\_ -> return Nothing))) msg
-                   
+     tracker <- ES.get nickTracker
+     let x = case msg of
+               NICK (User old_nick _ _) new_nick -> 
+                    Just (NickChange old_nick new_nick
+                         ,changeNick old_nick new_nick tracker)
+               ACCOUNT (User nick _ _) (Just acc) -> 
+                    Just (Login  nick acc
+                         ,login nick acc tracker)
+               ACCOUNT (User nick _ _) Nothing    -> 
+                    Just (Logout nick
+                         ,logout nick tracker    )
+               RAW (N 354) [_, nick, "0"] -> 
+                    Just (Logout (Nick nick)
+                         ,logout (Nick nick) tracker    )
+               RAW (N 354) [_, nick, acc] ->
+                    Just (Login (Nick nick) (Account acc)
+                    ,login (Nick nick) (Account acc) tracker)
+               _ -> Nothing
      case x of
-          Nothing -> return ()
-          Just (ev, nt) -> do
-              _1 %= pushEvent ev
-              _2 . nickTracker .= nt
-              return ()
+         Nothing -> return ()
+         Just (ev, trk) -> do
+             pushEvent ev 
+             ES.put nickTracker trk

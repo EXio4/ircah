@@ -9,6 +9,8 @@ import           Data.Set  (Set)
 import           Data.Map  (Map)
 import           Data.Bimap (Bimap)
 import qualified IRC.Raw.Types as Raw
+import           IRC.Raw.Monad
+import           Common.Types
 import           CAH.Cards.Types
 import           Data.ByteString (ByteString)
 import           Data.Monoid
@@ -16,6 +18,17 @@ import           Data.Dynamic
 import           Data.Text (Text)
 import           Control.Applicative
 import           System.Random
+import           Control.Monad.Trans.Class
+import qualified Control.Monad.Ether.State.Strict as ES
+import qualified Control.Monad.Ether.Reader as ER
+import           Control.Ether.TH
+
+ethereal "GameState" "gameState"
+ethereal "CardSet"   "cardSet"
+ethereal "Tracker" "nickTracker"
+
+type TrackerMonad = ES.MonadState Tracker   NickTracker
+type GameMonad r m = (ES.MonadState GameState (GS r) m, ER.MonadReader CardSet [Pack] m)
 
 data Cmd = N Int
          | S ByteString
@@ -47,13 +60,18 @@ data Players a = Players (Bimap UID Account) (Map Account a)
 userNick :: User -> Nick
 userNick (User n _ _) = n
         
-type Channel = Text
-type Nick    = Text
-type Message = Text
+newtype Channel = Channel Text
+    deriving (Show,Eq)
+newtype Nick    = Nick    Text
+    deriving (Show,Eq,Ord)
+newtype Message = Message Text
+    deriving (Show,Eq)
+newtype Target  = Target Text
+    deriving (Show,Eq)
+newtype Account = Account Text
+    deriving (Show,Eq,Ord)
 type Ident   = Text
 type Host    = Text
-type Account = Text
-type Target  = Text
 
 data Mode = Plus  Char
           | Minus Char
@@ -67,52 +85,101 @@ data SASLCfg = SASLCfg {
 } deriving (Show,Eq)
 
 data ChannelCfg = ChannelCfg {
-     channel_name     :: String
+     channel_name     :: Channel
     ,channel_password :: Maybe String
 } deriving (Show,Eq)
     
 data IRCConfig = IRCConfig {
      config_network  :: String
     ,config_port     :: Int
-    ,config_nick     :: String
+    ,config_nick     :: Nick
     ,config_sasl     :: Maybe SASLCfg
     ,config_channels :: [ChannelCfg]
 } deriving (Show,Eq)
 
 
 type Player = Account
+    
+
+data LogicCommand 
+        = PlayerJoin  Account 
+        | PlayerLeave Account 
+        | CzarLeaves  Account 
+        | PlayerPick  Account [WhiteCard]
+        | CzarPick    Account ChoiceN
+        | ShowTable
+        | ShowCards   Account
+    
+data TextMessage
+        = NoError
+        | UserNotPlaying     Nick
+        | UserNotIdentified  Nick
+        | AlreadyPlaying     Nick
+        | JoinPlayer         Nick
+        | LeavePlayer        Nick
+        | ReplacingOld       Nick Nick -- the first nick is the "old" one
+        | MustPickNCards     Nick Integer
+        | PlayersWin        [Nick] Points
+        | CzarPicked         Nick Nick BlackCard [WhiteCard] Points -- first is czar
+        | YourCardsAre       Nick [(Integer, WhiteCard)]
+        | TheCardsAre
+        | CardsPicked        Nick Integer BlackCard [WhiteCard]
+        | PlayersList        [Nick]
+        | Table              Nick BlackCard
+        | StatusWaitingCzar  Nick 
+        | StatusWaitPlayers  Nick [Nick] -- first is czar
+        | Debug              Text
+        
+    
+newtype ChoiceN = ChoiceN Integer
+    deriving (Show,Eq,Ord)
 
 newtype Points = Points Integer
     deriving (Show,Eq,Ord,Num)
-
-
-data Game = GS {
+    
+type Game r m
+    = ES.StateT  GameState (GS r) 
+    ( ES.StateT  EventsTag Events
+    ( ES.StateT  Tracker   NickTracker
+    ( ER.ReaderT CardSet [Pack]
+    (IRC m))))
+    
+data GS a = GS {
             _stdGen        :: StdGen
            ,_whiteCards    :: Set WhiteCard
            ,_blackCards    :: Set BlackCard
-           ,_allCards      :: (Set WhiteCard, Set BlackCard) -- allCards should be part of Reader, it's an immutable tuple of _all_ cards, used when refilling
-           ,_nickTracker   :: NickTracker
            ,_players       :: Players (Set WhiteCard) -- ^ current players (and their cards)
-           ,_current       :: Maybe Current
+           ,_current       :: a
 } deriving (Show)
 
-data Current = Current {
+changing :: Monad m => (GS r -> GS r') -> Game r' m a -> Game r m a
+changing f gs = do
+    x <- ES.get gameState
+    lift $ ES.evalStateT gameState gs (f x)
+
+data NoGame = NoGame
+    deriving (Show)
+
+data Current w = Current {
             _points        :: Map Player Points
-           ,_table         :: (BlackCard,Player)         -- ^ black card and czar
-           ,_currS         :: Either WaitingForCzar WaitingForPlayers
+           ,_czar          :: Player
+           ,_blackCard     :: BlackCard
+           ,_currentB      :: w
 } deriving (Show)
 
-data WaitingForCzar = WaitingForCzar {
+data WFCzar = WFCzar {
          _picks :: Map Int (Player, WhiteCard)
         ,_picked :: Maybe Int
 } deriving (Show)
 
-data WaitingForPlayers = WaitingForPlayers {
+data WFPlayers = WFPlayers {
         _waitingFor    :: Set Player                 -- ^ players we're waiting for
        ,_alreadyPlayed :: Map Player WhiteCard       -- ^ players with their picks
 } deriving (Show)
 
-makeLenses ''Game
+
+makeLenses ''GS
 makeLenses ''Current
-makeLenses ''WaitingForCzar
-makeLenses ''WaitingForPlayers
+makeLenses ''WFCzar
+makeLenses ''WFPlayers
+

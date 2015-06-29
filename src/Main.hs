@@ -34,7 +34,7 @@ convertFN typ json out
                     Just v  -> withFile out WriteMode (`exportWhiteCards` v)
            _ -> putStrLn "wat"
 
-cfg net p nick ch = IRCConfig net p nick Nothing [ChannelCfg ch Nothing]
+cfg net p nick ch = IRCConfig net p (Nick (T.pack nick)) Nothing [ChannelCfg (Channel (T.pack ch)) Nothing]
                       
 main :: IO ()
 main = do
@@ -51,7 +51,7 @@ main = do
                          forM_ xs print
                      Right defPack -> 
                          let irc_config = cfg network (read port) nick ch
-                         in runGame irc_config [defPack] (game (T.pack nick) (T.pack ch))
+                         in runGame irc_config [defPack] (game (config_nick irc_config) (Channel (T.pack ch)))
          xs -> putStrLn "invalid params"
          
     

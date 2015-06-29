@@ -1,4 +1,4 @@
-module IRC.Client (connectToIRC, connectToIRC'with, onIRC, onIRC_h, mutateIRC_cfg) where
+module IRC.Client (connectToIRC, connectToIRC'with, mutateIRC_cfg) where
 
 import           Control.Applicative
 import           Control.Monad
@@ -15,9 +15,9 @@ import qualified Data.Text             as T
 import           Control.Monad.IO.Class
 
 mutateIRC_cfg :: Monad m => IRCConfig -> IRC m a -> IRC m a
-mutateIRC_cfg (IRCConfig network port nick sasl channels) irc = do
-        cmd "USER"  ["x", "x", "x", "x"]
-        cmd "NICK"  [T.pack nick]
+mutateIRC_cfg (IRCConfig network port (Nick nick) sasl channels) irc = do
+        cmd "USER"  [nick, "x", "x", "hasky"]
+        cmd "NICK"  [nick]
         reader channels irc
 
 connectToIRC :: IRCConfig -> IRC IO a -> IO a
@@ -36,17 +36,10 @@ reader channels = Raw.mutateIRC Raw.irc_send recv
                     (Raw.Message _ _ (Raw.Command "PING") params) -> do
                         Raw.irc_send (Raw.Message Nothing Nothing (Raw.Command "PONG") params)
                     (Raw.Message _ _ (Raw.CmdNumber 376)  _) -> do
-                        forM_ channels $ \(ChannelCfg ch pwd) -> 
-                            Raw.irc_send (command "JOIN" (map T.pack (ch : (case pwd of
+                        forM_ channels $ \(ChannelCfg (Channel ch) pwd) -> 
+                            Raw.irc_send (command "JOIN" (ch : map T.pack (case pwd of
                                                                             Nothing -> []
-                                                                            Just v  -> [v]))))
+                                                                            Just v  -> [v])))
                     _ -> return ()
               return x
 
-            
-            
-onIRC_h :: Monad m => Raw.Message -> Handler Raw.Message (IRC m) a -> IRC m a
-onIRC_h x handler = run handler x
-    
-onIRC :: Monad m => Raw.Message -> (Raw.Message -> IRC m r) -> [Command Raw.Message (IRC m) r] -> IRC m r
-onIRC msg fb cmds = onIRC_h msg (Handler cmds (Fallback fb)) 

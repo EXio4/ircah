@@ -56,13 +56,6 @@ countHoles (BlackCard x) = length (filter h x)
           h InvisibleHole = True
           h Txt{} = False
     
-fillBlackCard :: BlackCard -> [Text] -> Text
-fillBlackCard (BlackCard x) = go x 
-    where go (Txt x:xs)            rs  = x <> go xs rs
-          go (VisibleHole:xs)   (r:rs) = r <> go xs rs
-          go (InvisibleHole:xs) (r:rs) = r <> go xs rs
-          go []                    []  = ""
-          go _                     _   = "???"
           
 exportWhiteCards :: Handle -> Set WhiteCard -> IO ()
 exportWhiteCards h = F.mapM_ (\(WhiteCard x) -> T.hPutStrLn h x)
