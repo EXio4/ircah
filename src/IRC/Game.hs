@@ -36,9 +36,6 @@ emptyPlayersList = Players BM.empty M.empty
 
 withMap :: (Map Account md -> a) -> Players md -> a
 withMap f (Players _ m) = f m
-    
-removePlayer :: Account -> Players md -> Players md
-removePlayer acc pl@(Players bmap md) = Players (BM.deleteR acc bmap) (M.delete acc md)
 
 -- given an UID, give that user a new account
 replacePlayer :: Show md => UID -> Account -> Players md -> Players md
@@ -57,8 +54,8 @@ nickChange :: Show md => UID -> Account -> Players md -> Players md
 nickChange uid acc (Players bmap md) = Players x md
     where x = BM.insert uid acc bmap
                   
-addPlayer :: Show md => Nick -> Account -> md -> NickTracker -> Players md -> Players md
-addPlayer nick acc meta nicktracker (Players bmap md) = do
+addPlayer'pure :: Show md => Nick -> Account -> md -> NickTracker -> Players md -> Players md
+addPlayer'pure nick acc meta nicktracker (Players bmap md) = do
     let player_metadata = M.lookup   acc md
     case player_metadata of
          Nothing ->
@@ -66,6 +63,9 @@ addPlayer nick acc meta nicktracker (Players bmap md) = do
                 Just uid -> Players (BM.insert uid acc bmap) (M.insert acc meta md)
                 Nothing  -> error "[BROKEN INVARIANT] trying to add nick w/o UID, we aren't tracking him .. (yet we have his account, somehow?)"
          Just xs -> error ("[BROKEN INVARIANT!] addPlayer assumed new player was being added, but there's some garbage \n" ++ show xs)
+
+delPlayer'pure :: Account -> Players md -> Players md
+delPlayer'pure acc pl@(Players bmap md) = Players (BM.deleteR acc bmap) (M.delete acc md)
          
 checkAcc :: Account -> Players md -> Maybe UID
 checkAcc acc (Players bmap _) = BM.lookupR acc bmap
@@ -87,6 +87,17 @@ nickOf acc = do
     pls <- ES.gets gameState (^.players)
     trk <- ES.get  nickTracker 
     return $ nickFromAcc acc pls trk
+    
+addPlayer :: (TrackerMonad m, GameMonad r m) => Nick -> Account -> Set WhiteCard -> m ()
+addPlayer nick acc cards = do
+    trk <- ES.get  nickTracker
+    ES.modify gameState $ \gs -> do
+        gs & players %~ addPlayer'pure nick acc cards trk
+        
+delPlayer :: (GameMonad r m) => Nick -> Account -> m ()
+delPlayer nick acc = do
+    ES.modify gameState $ \gs -> do
+        gs & players %~ delPlayer'pure acc
 
 nickPlaying :: (TrackerMonad m, GameMonad r m) => Nick -> m (Maybe Account)
 nickPlaying nick = do
@@ -111,8 +122,11 @@ showPlayers' tracker (Players bmap _) = map f (BM.toList bmap)
                     Nothing -> T.pack (show uid) <> " (ghost, acc = " <> acc <> ") "
                     Just (Nick v) -> v <> " (" <> acc <> ")")
     
-playersList :: (TrackerMonad m, GameMonad r m) => m [Nick]
-playersList = showPlayers' `liftM` ES.get   nickTracker `ap` ES.gets gameState (^.players)
+playersPrettyList :: (TrackerMonad m, GameMonad r m) => m [Nick]
+playersPrettyList = showPlayers' `liftM` ES.get   nickTracker `ap` ES.gets gameState (^.players)
+    
+playersList :: (GameMonad r m) => m (Map Account (Set WhiteCard))
+playersList = fmap (withMap id) (ES.gets gameState (^.players))
     
 funpack :: [Pack] -> (Set WhiteCard, Set BlackCard)
 funpack [] = (S.empty, S.empty)
@@ -174,23 +188,36 @@ initialState white black = GS {
     ,_current       = NoGame
 }
 
-startState :: Player -> BlackCard -> [Player] -> Current WFPlayers
-startState czar black rest = Current { 
-      _points    = M.fromList []
-     ,_czar      = czar
-     ,_blackCard = black
-     ,_currentB  = WFPlayers {
-         _waitingFor    = S.fromList rest
-        ,_alreadyPlayed = M.fromList []
-     }
-}
+startingGameWith :: Map Player (Set WhiteCard) -> BlackCard -> Current WFPlayers
+startingGameWith players black = do
+    let (czar:players') = fmap fst $ M.toList players
+    Current {
+        _points = M.fromList []
+        ,_czar  = czar
+        ,_blackCard = black
+        ,_currentB = WFPlayers {
+              _waitingFor    = S.fromList players'
+             ,_alreadyPlayed = M.fromList []
+        }
+    }
 
-            
-mainGame :: (Raw.MonadIRC m, EventsMonad m, TrackerMonad m, GameMonad x m, Functor m) => (LogicCommand -> m ()) -> Nick -> Channel -> m ()
-mainGame runLogic botNick gameChannel = forever loop
+    
+toChannel x = do
+    channel <- ER.reader gameInfo (^.gameChannel)    
+    IRC.msg channel (Message (translate x))
+
+toUser nick x =
+    IRC.msg nick (Message (translate x))
+
+mainGame :: (Raw.MonadIRC m, EventsMonad m, TrackerMonad m, GameMonad x m, Functor m) =>
+                    (LogicCommand (ToLogicTag x) -> m ()) ->
+                    [(Text, User -> Channel -> [Text] -> m (Either TextMessage (LogicCommand (ToLogicTag x))))] ->
+                    m ()
+mainGame runLogic mcmds = loop
     where loop = do
             raw_msg <- IRC.irc_read
             Tracker.trackerSM raw_msg
+            gameChannel <- ER.reader gameInfo (^.gameChannel) 
             case raw_msg of
                 IRC.JOIN user (Channel channel) metadata -> do
                         let user'@(Nick nick) = userNick user
@@ -200,23 +227,22 @@ mainGame runLogic botNick gameChannel = forever loop
                                      IRC.cmd "CS" ["op", channel]
                                      IRC.cmd "WHO" [channel, "%na"]
                             _     -> IRC.cmd "WHO" [nick , "%na"]
+                        loop
                 IRC.CHMSG user channel msg
                         | gameChannel == channel
                         , Just (cmd, args) <- cmds '!' msg -> do
                             logCmd <- cmd user channel args
                             case logCmd of
-                                 Left NoError    -> return ()
-                                 Left x -> toChannel x
+                                 Left NoError    -> loop
+                                 Left x -> toChannel x >> loop
                                  Right x -> runLogic x 
-                _ -> return ()
-    
-          toChannel x = IRC.msg gameChannel (Message (translate x))
-          toUser nick x = IRC.msg nick (Message (translate x))
+                _ -> loop
+
           cmdList = [("ping"   , pongHandler)
                     ,("join"   , joinHandler)
                     ,("part"   , partHandler)
                     ,("players", playersHandler)
-                    ]
+                    ] ++ mcmds
           
           cmds prefix (Message (T.uncons -> Just (p, (T.words -> (command:params)))))
                     | p == prefix
@@ -231,7 +257,7 @@ mainGame runLogic botNick gameChannel = forever loop
                     Just _   -> return $ Left (AlreadyPlaying (userNick user))
                     Nothing -> do
                         toChannel (JoinPlayer (userNick user))
-                        return $ Right (PlayerJoin acc)
+                        return $ Right (PlayerJoin (userNick user) acc)
                        
 
           partHandler user channel args = do
@@ -240,28 +266,81 @@ mainGame runLogic botNick gameChannel = forever loop
                    Nothing  -> return $ Left (UserNotPlaying (userNick user))
                    Just acc  -> do
                        toChannel (LeavePlayer (userNick user))
-                       return $ Right (PlayerLeave acc)
+                       return $ Right (PlayerLeave (userNick user) acc)
                        
           playersHandler user channel args = do
-              fmap (Left . PlayersList) playersList
+              fmap (Left . PlayersList) playersPrettyList
           
           pongHandler user channel args = do
               IRC.msg channel "pong!"
               return (Left NoError)
+        
+handlePlayerTracking :: (Raw.MonadIRC m, EventsMonad m, TrackerMonad m, GameMonad x m, Functor m) => LogicCommand x' -> m ()
+handlePlayerTracking lcmd = do
+    case lcmd of
+            PlayerJoin nick acc -> do
+                cards <- takeWCards 10
+                addPlayer nick acc cards
+            PlayerLeave nick acc -> do
+                delPlayer nick acc
+            _ -> return () -- not a join/part
+
           
-game :: (Raw.MonadIRC m, EventsMonad m, TrackerMonad m, GameMonad x m, Functor m) => Nick -> Channel -> m ()
-game = mainGame (const $ return ())
-         
+noGame :: Monad m => Game NoGame m ()
+noGame = mainGame gameHandler [("start", startHandler)]
+    where startHandler user channel args = do
+            pls <- playersPrettyList
+            accM <- nickPlaying (userNick user)
+            if | length pls < 3 -> return $ Left  (NotEnoughPlayers 3)
+               | Just acc <- accM -> do
+                   toChannel (GameStarted pls)
+                   return $ Right (StartGame (userNick user) acc)
+               | otherwise ->
+                    return $ Left (UserNotPlaying (userNick user))
+          gameHandler p = do
+              handlePlayerTracking p
+              pls <- playersList
+              case p of
+                   StartGame _ _ -> do
+                       black <- takeBCard
+                       changing (\s -> s & current .~ startingGameWith pls black) gameRunning
+                   _ -> noGame
+              
+gameRunning :: Monad m => Game (Current WFPlayers) m ()
+gameRunning = mainGame gameHandler [("pick", pickHandler)
+                                   ,("cards",cardsHandler)]
+    where pickHandler user channel args = do
+                return (Left NoError)
+          cardsHandler user channel args = do
+                return (Left NoError)
+          startHandler p = do
+                return (Left GameAlreadyBeingPlayed)
+          gameHandler p = do
+              handlePlayerTracking p
+              pls <- playersPrettyList
+              if | length pls < 3 -> do
+                    toChannel (NotEnoughPlayers 3)
+                    changing (\s -> s & current .~ NoGame) noGame
+                    -- we delete previous info
+                 | otherwise -> do
+                    gameRunning
+
+                   
 stateGame :: [Pack] -> GS NoGame
 stateGame packs  = 
         let (white,black) = funpack packs
         in initialState white black
         
-runGame :: IRCConfig -> [Pack] -> Game NoGame IO x -> IO x
-runGame cfg packs irc0 = do
+runGame :: IRCConfig -> Channel -> [Pack] -> Game NoGame IO x -> IO x
+runGame cfg ch packs irc0 = do
+        let gi = GameInfo {
+                     _gameChannel = ch
+                    ,_botNick     = config_nick cfg
+                }
         let irc1 = ES.evalStateT  gameState   irc0 (stateGame packs)
             irc2 = ES.evalStateT  events      irc1  emptyEvents
             irc3 = ES.evalStateT  nickTracker irc2 (Tracker.defTracker (config_nick cfg))
             irc4 = ER.runReaderT  cardSet     irc3  packs
-        IRC.connectToIRC cfg irc4
+            irc5 = ER.runReaderT  gameInfo    irc4  gi
+        IRC.connectToIRC cfg irc5
         

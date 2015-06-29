@@ -75,7 +75,7 @@ executable cah
   default-extensions:    OverloadedStrings, ScopedTypeVariables, TupleSections
                         ,GADTs, FlexibleContexts, RankNTypes, AutoDeriveTypeable
                         ,LambdaCase, MultiWayIf, ViewPatterns, PatternSynonyms
-                        ,ConstraintKinds
+                        ,ConstraintKinds, DataKinds, TypeFamilies, PolyKinds
   
   -- Other library packages from which modules are imported.
   build-depends:       base >=4.7 && <4.8

@@ -48,6 +48,15 @@ translate x =
         UserNotIdentified (Nick n) ->
             n <> ": you must identify to play this game"
 
+        GameAlreadyBeingPlayed ->
+            "we're already playing, you can just !join"
+            
+        NotEnoughPlayers n ->
+            "a game needs (at least) " <> int n <> " players"
+            
+        GameStarted pls ->
+            "wake up! a new game is being played! " <> showPlayers pls
+            
         MustPickNCards (Nick n) m ->
             "you must pick " <> int m <> " cards"
 

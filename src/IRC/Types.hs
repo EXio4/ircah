@@ -23,12 +23,13 @@ import qualified Control.Monad.Ether.State.Strict as ES
 import qualified Control.Monad.Ether.Reader as ER
 import           Control.Ether.TH
 
-ethereal "GameState" "gameState"
-ethereal "CardSet"   "cardSet"
-ethereal "Tracker" "nickTracker"
+ethereal "GameState"  "gameState"
+ethereal "CardSet"    "cardSet"
+ethereal "Tracker"    "nickTracker"
+ethereal "GameInfoT"  "gameInfo"
 
 type TrackerMonad = ES.MonadState Tracker   NickTracker
-type GameMonad r m = (ES.MonadState GameState (GS r) m, ER.MonadReader CardSet [Pack] m)
+type GameMonad r m = (ES.MonadState GameState (GS r) m, ER.MonadReader CardSet [Pack] m, ER.MonadReader GameInfoT GameInfo m, Applicative m)
 
 data Cmd = N Int
          | S ByteString
@@ -99,22 +100,42 @@ data IRCConfig = IRCConfig {
 
 
 type Player = Account
-    
 
-data LogicCommand 
-        = PlayerJoin  Account 
-        | PlayerLeave Account 
-        | CzarLeaves  Account 
-        | PlayerPick  Account [WhiteCard]
-        | CzarPick    Account ChoiceN
-        | ShowTable
-        | ShowCards   Account
+data NatN = Nat_Zero
+          | Nat_Succ NatN
+    
+data T_GameState {-(p :: NatN)-} a
+    = T_NoGameBeingPlayed
+    | T_WaitingFor a
+    deriving (Typeable)
+data T_Waiting
+    = T_Players
+    | T_Czar
+    deriving (Typeable)
+
+type family ToLogicTag (x :: *) :: T_GameState T_Waiting where
+    ToLogicTag NoGame              = T_NoGameBeingPlayed
+    ToLogicTag (Current WFCzar)    = T_WaitingFor T_Czar
+    ToLogicTag (Current WFPlayers) = T_WaitingFor T_Players
+    
+data LogicCommand st  where
+    PlayerJoin  :: Nick -> Account ->                LogicCommand a
+    PlayerLeave :: Nick -> Account ->                LogicCommand a
+    StartGame   :: Nick -> Account ->                LogicCommand T_NoGameBeingPlayed
+    CzarLeaves  :: Nick -> Account ->                LogicCommand (T_WaitingFor a)
+    PlayerPick  :: Nick -> Account -> [WhiteCard] -> LogicCommand (T_WaitingFor T_Players)
+    CzarPick    :: Nick -> Account -> ChoiceN     -> LogicCommand (T_WaitingFor T_Czar)
+    ShowTable   ::                                   LogicCommand (T_WaitingFor a)
+    ShowCards   :: Nick -> Account ->                LogicCommand (T_WaitingFor a)
     
 data TextMessage
         = NoError
         | UserNotPlaying     Nick
         | UserNotIdentified  Nick
+        | NotEnoughPlayers   Integer
         | AlreadyPlaying     Nick
+        | GameStarted        [Nick]
+        | GameAlreadyBeingPlayed
         | JoinPlayer         Nick
         | LeavePlayer        Nick
         | ReplacingOld       Nick Nick -- the first nick is the "old" one
@@ -141,8 +162,14 @@ type Game r m
     = ES.StateT  GameState (GS r) 
     ( ES.StateT  EventsTag Events
     ( ES.StateT  Tracker   NickTracker
-    ( ER.ReaderT CardSet [Pack]
-    (IRC m))))
+    ( ER.ReaderT CardSet   [Pack]
+    ( ER.ReaderT GameInfoT GameInfo
+    (IRC m)))))
+    
+data GameInfo = GameInfo {
+         _gameChannel :: Channel
+        ,_botNick     :: Nick
+} deriving (Show)
     
 data GS a = GS {
             _stdGen        :: StdGen
@@ -182,4 +209,4 @@ makeLenses ''GS
 makeLenses ''Current
 makeLenses ''WFCzar
 makeLenses ''WFPlayers
-
+makeLenses ''GameInfo

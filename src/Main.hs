@@ -51,7 +51,7 @@ main = do
                          forM_ xs print
                      Right defPack -> 
                          let irc_config = cfg network (read port) nick ch
-                         in runGame irc_config [defPack] (game (config_nick irc_config) (Channel (T.pack ch)))
+                         in runGame irc_config (Channel (T.pack ch)) [defPack] noGame
          xs -> putStrLn "invalid params"
          
     
